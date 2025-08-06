@@ -1,1 +1,4 @@
-Help DarkyBot!
+!addreaction <üzenet_id> <emoji> <szerep_név> – (Hozzárendelés)
+!removereaction <üzenet_id> <emoji> – (Hozzárendelés törlése)
+!listreactions – (Reakció lista megjelenítése)
+!dbhelp – Ez a segítség
