@@ -25,7 +25,11 @@ ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
 
 if os.path.exists(ALLOWED_GUILDS_FILE):
     with open(ALLOWED_GUILDS_FILE, "r", encoding="utf-8") as f:
-        allowed_guilds = {int(line.strip()) for line in f if line.strip().isdigit()}
+        allowed_guilds = {
+            int(line.split("#")[0].strip())
+            for line in f
+            if line.strip() and not line.strip().startswith("#")
+        }
 else:
     allowed_guilds = set()
 
@@ -34,9 +38,18 @@ def is_guild_allowed():
     async def predicate(ctx):
         if ctx.guild and ctx.guild.id in allowed_guilds:
             return True
-        await ctx.send("❌ Ez a szerver nincs engedélyezve. Látogasson el ide: https://www.darksector.hu")
-        return False
+        raise commands.CheckFailure("❌ Ez a szerver nincs engedélyezve. Látogasson el ide: https://www.darksector.hu")
     return commands.check(predicate)
+
+# Globális hibafigyelő – csak akkor küld hibát, ha tényleg szükséges
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        await ctx.send(str(error))
+    elif isinstance(error, commands.MissingPermissions):
+        await ctx.send("🚫 Nincs jogosultságod a parancs használatához.")
+    else:
+        print(f"Hiba: {error}")
 
 # Reaction roles fájl
 REACTION_ROLES_FILE = "reaction_roles.json"
@@ -184,7 +197,7 @@ async def on_raw_reaction_remove(payload):
 
 # 🔴 HTML válasz OBS + Replit webnézethez
 async def handle(request):
-    text_color = "#00eeff"  # világoskék
+    text_color = "#00eeff"
 
     html_content = f"""
     <html>
