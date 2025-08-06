@@ -5,20 +5,20 @@ import json
 from aiohttp import web
 import asyncio
 
-# Tokenek közvetlenül Render environment változókból
+# Token beolvasása Render environment-ből
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
-# Intents
+# Intents beállítása
 intents = discord.Intents.default()
 intents.message_content = True
 intents.reactions = True
 intents.guilds = True
 intents.members = True
 
-# Bot példány
+# Bot inicializálása
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Fájlok
+# Állandó fájlnevek
 ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
 REACTION_ROLES_FILE = "reaction_roles.json"
 
@@ -31,7 +31,7 @@ def load_allowed_guilds():
 
 allowed_guilds = load_allowed_guilds()
 
-# Reaction roles betöltése
+# Reakció-szerepek betöltése
 if os.path.exists(REACTION_ROLES_FILE):
     with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
         try:
@@ -45,7 +45,7 @@ if os.path.exists(REACTION_ROLES_FILE):
 else:
     reaction_roles = {}
 
-# Mentés
+# Reakció-szerepek mentése
 def save_reaction_roles():
     with open(REACTION_ROLES_FILE, "w", encoding="utf-8") as f:
         json.dump({
@@ -53,15 +53,18 @@ def save_reaction_roles():
             for gid, msgs in reaction_roles.items()
         }, f, ensure_ascii=False, indent=4)
 
-# Globális parancsellenőrzés
+# Globális parancsellenőrzés (kivéve ha parancs: dbactivate)
 @bot.check
 async def guild_permission_check(ctx):
+    if ctx.command.name == "dbactivate":
+        return True
     return ctx.guild and ctx.guild.id in allowed_guilds
 
 @bot.event
 async def on_ready():
-    print(f"✅ Bejelentkezett: {bot.user.name}")
+    print(f"✅ Bejelentkezve: {bot.user.name}")
 
+# Új reakció hozzárendelése
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
@@ -83,6 +86,7 @@ async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
     else:
         await ctx.send(f"🔧 `{emoji}` → `{role_name}` (üzenet ID: `{message_id}`)")
 
+# Reakció eltávolítása
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def removereaction(ctx, message_id: int, emoji: str):
@@ -102,6 +106,7 @@ async def removereaction(ctx, message_id: int, emoji: str):
     else:
         await ctx.send("⚠️ Nem található az emoji vagy üzenet.")
 
+# Reakciók listázása
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def listreactions(ctx):
@@ -117,7 +122,7 @@ async def listreactions(ctx):
             msg += f"   {emoji} → `{role}`\n"
     await ctx.send(msg)
 
-# Reakciókezelés
+# Reakció hozzáadás figyelése
 @bot.event
 async def on_raw_reaction_add(payload):
     if payload.user_id == bot.user.id:
@@ -140,6 +145,7 @@ async def on_raw_reaction_add(payload):
             await member.add_roles(role)
             print(f"✅ {member} kapta: {role.name}")
 
+# Reakció eltávolítás figyelése
 @bot.event
 async def on_raw_reaction_remove(payload):
     if payload.guild_id not in allowed_guilds:
@@ -160,31 +166,11 @@ async def on_raw_reaction_remove(payload):
             await member.remove_roles(role)
             print(f"❌ {member} elvesztette: {role.name}")
 
-# !dbhelp – csak engedélyezett szervereken
-@bot.command()
-async def dbhelp(ctx):
-    try:
-        with open("help.txt", "r", encoding="utf-8") as f:
-            help_text = f.read()
-        await ctx.send(help_text)
-    except FileNotFoundError:
-        await ctx.send("📁 A `help.txt` fájl nem található.")
-
-# !dbactivate – mindenen lefut
-@bot.command()
-async def dbactivate(ctx):
-    try:
-        with open("activateinfo.txt", "r", encoding="utf-8") as f:
-            info_text = f.read()
-        await ctx.send(info_text)
-    except FileNotFoundError:
-        await ctx.send("📁 A `activateinfo.txt` fájl nem található.")
-
-# Webszerver
+# Web szerver kezdőlap
 async def handle(request):
     return web.Response(text="✅ DarkyBot él!", content_type='text/html')
 
-# JSON megtekintő
+# JSON fájl kilistázása
 async def get_json(request):
     if os.path.exists(REACTION_ROLES_FILE):
         with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
@@ -192,7 +178,7 @@ async def get_json(request):
     else:
         return web.Response(text="{}", content_type="application/json")
 
-# Webserver setup
+# Web szerver beállítás
 app = web.Application()
 app.router.add_get("/", handle)
 app.router.add_get("/reaction_roles.json", get_json)
@@ -202,6 +188,26 @@ async def start_webserver():
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
+
+# !dbhelp parancs - csak engedélyezett szervereknél
+@bot.command()
+async def dbhelp(ctx):
+    try:
+        with open("help.txt", "r", encoding="utf-8") as f:
+            help_text = f.read()
+        await ctx.send(f"```{help_text}```")
+    except FileNotFoundError:
+        await ctx.send("📁 A `help.txt` fájl nem található.")
+
+# !dbactivate parancs - engedélyezett szerverlistától független
+@bot.command()
+async def dbactivate(ctx):
+    try:
+        with open("activateinfo.txt", "r", encoding="utf-8") as f:
+            text = f.read()
+        await ctx.send(f"```{text}```")
+    except FileNotFoundError:
+        await ctx.send("📁 Az `activateinfo.txt` fájl nem található.")
 
 # Futtatás
 async def main():
