@@ -34,11 +34,6 @@ def load_allowed_guilds():
 
 allowed_guilds = load_allowed_guilds()
 
-# Globális parancsellenőrzés (nem küld üzenetet!)
-@bot.check
-async def globally_block_dms_and_unauthorized_guilds(ctx):
-    return ctx.guild is not None and ctx.guild.id in allowed_guilds
-
 # Reaction roles betöltése fájlból
 if os.path.exists(REACTION_ROLES_FILE):
     with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
@@ -70,6 +65,9 @@ async def on_ready():
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
+    if ctx.guild.id not in allowed_guilds:
+        return
+
     guild_id = ctx.guild.id
     channel = ctx.channel
 
@@ -92,6 +90,9 @@ async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def removereaction(ctx, message_id: int, emoji: str):
+    if ctx.guild.id not in allowed_guilds:
+        return
+
     guild_id = ctx.guild.id
     if (guild_id in reaction_roles and
         message_id in reaction_roles[guild_id] and
@@ -111,6 +112,9 @@ async def removereaction(ctx, message_id: int, emoji: str):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def listreactions(ctx):
+    if ctx.guild.id not in allowed_guilds:
+        return
+
     guild_id = ctx.guild.id
     if guild_id not in reaction_roles or not reaction_roles[guild_id]:
         await ctx.send("ℹ️ Nincsenek beállított reakciók ebben a szerverben.")
@@ -188,17 +192,6 @@ async def on_raw_reaction_remove(payload):
     if role and member:
         await member.remove_roles(role)
         print(f"❌ {member} elveszítette a szerepet: {role.name}")
-
-# Hibaüzenet küldés, ha parancsot tilt a check
-@bot.event
-async def on_command_error(ctx, error):
-    if isinstance(error, commands.CheckFailure):
-        if ctx.guild is None:
-            await ctx.send("⛔ Ezt a parancsot csak szerveren lehet használni.")
-        elif ctx.guild.id not in allowed_guilds:
-            await ctx.send("⛔ Ez a parancs ebben a szerverben nem engedélyezett.")
-    else:
-        raise error  # vagy: print(f"Hiba: {error}")
 
 # 🔴 HTML válasz OBS + Replit webnézethez
 async def handle(request):
