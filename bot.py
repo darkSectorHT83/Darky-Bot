@@ -22,19 +22,30 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 
 # Reaction roles fájl
 REACTION_ROLES_FILE = "reaction_roles.json"
-
-# Engedélyezett szerverek betöltése
 ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
 
+# Engedélyezett szerverek betöltése
 def load_allowed_guilds():
     if not os.path.exists(ALLOWED_GUILDS_FILE):
-        return set()
+        return []
     with open(ALLOWED_GUILDS_FILE, "r", encoding="utf-8") as f:
-        return set(int(line.strip()) for line in f if line.strip().isdigit())
+        return [int(line.strip()) for line in f if line.strip().isdigit()]
 
 allowed_guilds = load_allowed_guilds()
 
-# Reaction roles betöltése fájlból
+# Globális parancscheck
+@bot.check
+async def check_allowed_guilds(ctx):
+    return ctx.guild is not None and ctx.guild.id in allowed_guilds
+
+# Hibaüzenetek némítása, ha nem engedélyezett a parancs
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        return  # Nincs hibaüzenet, csak némán elnyeli
+    raise error  # Más hibákat továbbra is dobja ki
+
+# Reaction roles betöltése
 if os.path.exists(REACTION_ROLES_FILE):
     with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
         reaction_roles = json.load(f)
@@ -48,7 +59,6 @@ if os.path.exists(REACTION_ROLES_FILE):
 else:
     reaction_roles = {}
 
-# Fájlba mentés
 def save_reaction_roles():
     with open(REACTION_ROLES_FILE, "w", encoding="utf-8") as f:
         json.dump({
@@ -56,18 +66,13 @@ def save_reaction_roles():
             for gid, msgs in reaction_roles.items()
         }, f, ensure_ascii=False, indent=4)
 
-# Bot készen áll
 @bot.event
 async def on_ready():
     print(f'✅ Bot bejelentkezett: {bot.user.name}')
 
-# Emoji–szerep hozzárendelés parancs
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
-    if ctx.guild.id not in allowed_guilds:
-        return
-
     guild_id = ctx.guild.id
     channel = ctx.channel
 
@@ -86,13 +91,9 @@ async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
     else:
         await ctx.send(f'🔧 Emoji `{emoji}` hozzárendelve ranghoz: `{role_name}` (üzenet ID: `{message_id}`)')
 
-# Emoji–szerep törlés parancs
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def removereaction(ctx, message_id: int, emoji: str):
-    if ctx.guild.id not in allowed_guilds:
-        return
-
     guild_id = ctx.guild.id
     if (guild_id in reaction_roles and
         message_id in reaction_roles[guild_id] and
@@ -108,13 +109,9 @@ async def removereaction(ctx, message_id: int, emoji: str):
     else:
         await ctx.send('⚠️ Nincs ilyen emoji vagy üzenet ID a rendszerben.')
 
-# Reakció lista lekérdezés
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def listreactions(ctx):
-    if ctx.guild.id not in allowed_guilds:
-        return
-
     guild_id = ctx.guild.id
     if guild_id not in reaction_roles or not reaction_roles[guild_id]:
         await ctx.send("ℹ️ Nincsenek beállított reakciók ebben a szerverben.")
@@ -127,19 +124,11 @@ async def listreactions(ctx):
             msg += f"   {emoji} → `{role}`\n"
     await ctx.send(msg)
 
-# Szerverlista újratöltése (csak owner)
-@bot.command()
-@commands.is_owner()
-async def reloadguilds(ctx):
-    global allowed_guilds
-    allowed_guilds = load_allowed_guilds()
-    await ctx.send("🔁 Engedélyezett szerverek listája frissítve.")
-
-# Reakció hozzáadás
 @bot.event
 async def on_raw_reaction_add(payload):
     if payload.user_id == bot.user.id:
         return
+
     if payload.guild_id not in allowed_guilds:
         return
 
@@ -165,7 +154,6 @@ async def on_raw_reaction_add(payload):
         await member.add_roles(role)
         print(f"✅ {member} kapott szerepet: {role.name}")
 
-# Reakció eltávolítás
 @bot.event
 async def on_raw_reaction_remove(payload):
     if payload.guild_id not in allowed_guilds:
@@ -193,10 +181,9 @@ async def on_raw_reaction_remove(payload):
         await member.remove_roles(role)
         print(f"❌ {member} elveszítette a szerepet: {role.name}")
 
-# 🔴 HTML válasz OBS + Replit webnézethez
+# HTML válasz OBS + Replit webnézethez
 async def handle(request):
     text_color = "#00eeff"
-
     html_content = f"""
     <html>
     <head>
@@ -218,7 +205,6 @@ async def handle(request):
     """
     return web.Response(text=html_content, content_type='text/html')
 
-# Webszerver indítása
 app = web.Application()
 app.router.add_get("/", handle)
 
@@ -228,10 +214,8 @@ async def start_webserver():
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
 
-# Discord bot + webserver futtatása
 async def main():
     await start_webserver()
     await bot.start(TOKEN)
 
 asyncio.run(main())
-
