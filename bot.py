@@ -5,7 +5,7 @@ import json
 from aiohttp import web
 import asyncio
 
-# Tokenek Render environment változókból
+# Tokenek Render environment-ből
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
 # Intents
@@ -18,7 +18,7 @@ intents.members = True
 # Bot példány
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Fájlnevek
+# Fájlok
 ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
 REACTION_ROLES_FILE = "reaction_roles.json"
 
@@ -53,7 +53,7 @@ def save_reaction_roles():
             for gid, msgs in reaction_roles.items()
         }, f, ensure_ascii=False, indent=4)
 
-# Parancsellenőrzés
+# Globális parancsellenőrzés
 @bot.check
 async def guild_permission_check(ctx):
     return ctx.guild and ctx.guild.id in allowed_guilds
@@ -160,23 +160,21 @@ async def on_raw_reaction_remove(payload):
             await member.remove_roles(role)
             print(f"❌ {member} elvesztette: {role.name}")
 
-# Webszerver
+# Webszerver: gyökér
 async def handle(request):
     return web.Response(text="✅ DarkyBot él!", content_type='text/html')
 
-# JSON megtekintő – formázott szövegként
+# JSON megtekintő – nyersen, szépen formázva
 async def get_json(request):
     if not os.path.exists(REACTION_ROLES_FILE):
-        return web.Response(text="{}", content_type="application/json")
+        return web.json_response({}, status=200, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=4))
 
     with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
         try:
             data = json.load(f)
         except json.JSONDecodeError:
-            return web.Response(text="{}", content_type="application/json")
-
-    formatted_json = json.dumps(data, ensure_ascii=False, indent=4)
-    return web.Response(text=formatted_json, content_type="application/json")
+            data = {}
+    return web.json_response(data, status=200, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=4))
 
 # Webserver setup
 app = web.Application()
@@ -189,7 +187,7 @@ async def start_webserver():
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
 
-# Futtatás
+# Indítás
 async def main():
     await start_webserver()
     await bot.start(DISCORD_TOKEN)
