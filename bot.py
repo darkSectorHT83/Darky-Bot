@@ -10,6 +10,22 @@ import asyncio
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
 
+# Engedélyezett szerverek betöltése
+def load_allowed_guilds(file_path="Reaction.ID.txt"):
+    allowed = set()
+    if os.path.exists(file_path):
+        with open(file_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    try:
+                        allowed.add(int(line.split("#")[0].strip()))
+                    except ValueError:
+                        continue
+    return allowed
+
+allowed_guilds = load_allowed_guilds()
+
 # Intents beállítása
 intents = discord.Intents.default()
 intents.message_content = True
@@ -20,42 +36,10 @@ intents.members = True
 # Bot példány
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Engedélyezett szerverek betöltése
-ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
-
-if os.path.exists(ALLOWED_GUILDS_FILE):
-    with open(ALLOWED_GUILDS_FILE, "r", encoding="utf-8") as f:
-        allowed_guilds = {
-            int(line.split("#")[0].strip())
-            for line in f
-            if line.strip() and not line.strip().startswith("#")
-        }
-else:
-    allowed_guilds = set()
-
-# Engedélyezés ellenőrző dekorátor
-def is_guild_allowed():
-    async def predicate(ctx):
-        if ctx.guild and ctx.guild.id in allowed_guilds:
-            return True
-        raise commands.CheckFailure("❌ Ez a szerver nincs engedélyezve. Látogasson el ide: https://www.darksector.hu")
-    return commands.check(predicate)
-
-# Globális hibafigyelő – pontosított
-@bot.event
-async def on_command_error(ctx, error):
-    if isinstance(error, commands.CheckFailure):
-        if ctx.guild and ctx.guild.id not in allowed_guilds:
-            await ctx.send("❌ Ez a szerver nincs engedélyezve. Látogasson el ide: https://www.darksector.hu")
-    elif isinstance(error, commands.MissingPermissions):
-        await ctx.send("🚫 Nincs jogosultságod a parancs használatához.")
-    else:
-        print(f"Hiba: {error}")
-
 # Reaction roles fájl
 REACTION_ROLES_FILE = "reaction_roles.json"
 
-# Reaction roles betöltése fájlból (guild → message → emoji → role)
+# Reaction roles betöltése fájlból
 if os.path.exists(REACTION_ROLES_FILE):
     with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
         reaction_roles = json.load(f)
@@ -76,6 +60,12 @@ def save_reaction_roles():
             str(gid): {str(mid): emoji_roles for mid, emoji_roles in msgs.items()}
             for gid, msgs in reaction_roles.items()
         }, f, ensure_ascii=False, indent=4)
+
+# Check dekorátor engedélyezett szerverekhez
+def is_guild_allowed():
+    async def predicate(ctx):
+        return ctx.guild and ctx.guild.id in allowed_guilds
+    return commands.check(predicate)
 
 # Bot készen áll
 @bot.event
@@ -148,6 +138,9 @@ async def on_raw_reaction_add(payload):
     if payload.user_id == bot.user.id:
         return
 
+    if payload.guild_id not in allowed_guilds:
+        return
+
     guild = bot.get_guild(payload.guild_id)
     if not guild:
         return
@@ -174,6 +167,9 @@ async def on_raw_reaction_add(payload):
 # Reakció eltávolítás
 @bot.event
 async def on_raw_reaction_remove(payload):
+    if payload.guild_id not in allowed_guilds:
+        return
+
     guild = bot.get_guild(payload.guild_id)
     if not guild:
         return
@@ -196,22 +192,31 @@ async def on_raw_reaction_remove(payload):
         await member.remove_roles(role)
         print(f"❌ {member} elveszítette a szerepet: {role.name}")
 
-# 🔴 HTML válasz OBS + Replit webnézethez
-async def handle(request):
-    text_color = "#00eeff"
+# Parancshibák kezelése
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        if ctx.guild and ctx.guild.id not in allowed_guilds:
+            await ctx.send("❌ Ez a szerver nincs engedélyezve. Látogasson el ide: https://www.darksector.hu")
+    elif isinstance(error, commands.MissingPermissions):
+        await ctx.send("🚫 Nincs jogosultságod a parancs használatához.")
+    else:
+        print(f"Hiba: {error}")
 
-    html_content = f"""
+# HTML válasz OBS + Replit webnézethez
+async def handle(request):
+    html_content = """
     <html>
     <head>
         <style>
-            body {{
+            body {
                 background-color: transparent;
-                color: {text_color};
+                color: #00eeff;
                 font-family: Arial, sans-serif;
                 font-size: 32px;
                 text-align: center;
                 margin-top: 30vh;
-            }}
+            }
         </style>
     </head>
     <body>
