@@ -24,7 +24,7 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 REACTION_ROLES_FILE = "reaction_roles.json"
 
 # Engedélyezett szerverek betöltése
-ALLOWED_GUILDS_FILE = "Reactions.ID.txt"
+ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
 
 def load_allowed_guilds():
     if not os.path.exists(ALLOWED_GUILDS_FILE):
@@ -234,3 +234,4 @@ async def main():
     await bot.start(TOKEN)
 
 asyncio.run(main())
+
