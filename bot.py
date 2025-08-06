@@ -5,7 +5,7 @@ import json
 from aiohttp import web
 import asyncio
 
-# Token közvetlenül Render környezeti változóból
+# Token közvetlen környezeti változóból (Render beállítás)
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
 # Intents
@@ -15,6 +15,7 @@ intents.reactions = True
 intents.guilds = True
 intents.members = True
 
+# Bot példány
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 # Fájlnevek
@@ -30,7 +31,7 @@ def load_allowed_guilds():
 
 allowed_guilds = load_allowed_guilds()
 
-# Reakció szerepkörök betöltése
+# Reaction roles betöltése
 if os.path.exists(REACTION_ROLES_FILE):
     with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
         try:
@@ -44,7 +45,7 @@ if os.path.exists(REACTION_ROLES_FILE):
 else:
     reaction_roles = {}
 
-# Mentés JSON-ba
+# Reaction roles mentése
 def save_reaction_roles():
     with open(REACTION_ROLES_FILE, "w", encoding="utf-8") as f:
         json.dump({
@@ -52,16 +53,17 @@ def save_reaction_roles():
             for gid, msgs in reaction_roles.items()
         }, f, ensure_ascii=False, indent=4)
 
-# Globális parancsellenőrzés
+# Engedélyezés parancsokhoz
 @bot.check
 async def guild_permission_check(ctx):
     return ctx.guild and ctx.guild.id in allowed_guilds
 
+# Bejelentkezés
 @bot.event
 async def on_ready():
-    print(f"✅ Bejelentkezett: {bot.user.name}")
+    print(f"✅ Bejelentkezve: {bot.user.name}")
 
-# Parancsok
+# Reakció hozzáadása parancs
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
@@ -83,6 +85,7 @@ async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
     else:
         await ctx.send(f"🔧 `{emoji}` → `{role_name}` (üzenet ID: `{message_id}`)")
 
+# Reakció eltávolítása
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def removereaction(ctx, message_id: int, emoji: str):
@@ -102,6 +105,7 @@ async def removereaction(ctx, message_id: int, emoji: str):
     else:
         await ctx.send("⚠️ Nem található az emoji vagy üzenet.")
 
+# Lista parancs
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def listreactions(ctx):
@@ -117,23 +121,7 @@ async def listreactions(ctx):
             msg += f"   {emoji} → `{role}`\n"
     await ctx.send(msg)
 
-@bot.command()
-async def help(ctx):
-    try:
-        with open("help.txt", "r", encoding="utf-8") as f:
-            help_text = f.read()
-
-        await ctx.send(f"📘 **Súgó:**\n```{help_text}```")
-
-        try:
-            await ctx.author.send(f"📬 **Súgó privátban is:**\n```{help_text}```")
-        except discord.Forbidden:
-            await ctx.send("⚠️ Nem tudtam privátban is elküldeni (DM letiltva?).")
-
-    except Exception as e:
-        await ctx.send(f"⚠️ Nem sikerült megjeleníteni a súgót: {e}")
-
-# Reakció események
+# Reakció hozzáadás esemény
 @bot.event
 async def on_raw_reaction_add(payload):
     if payload.user_id == bot.user.id:
@@ -156,6 +144,7 @@ async def on_raw_reaction_add(payload):
             await member.add_roles(role)
             print(f"✅ {member} kapta: {role.name}")
 
+# Reakció eltávolítás esemény
 @bot.event
 async def on_raw_reaction_remove(payload):
     if payload.guild_id not in allowed_guilds:
@@ -176,10 +165,11 @@ async def on_raw_reaction_remove(payload):
             await member.remove_roles(role)
             print(f"❌ {member} elvesztette: {role.name}")
 
-# Webszerver
+# Webszerver válasz
 async def handle(request):
     return web.Response(text="✅ DarkyBot él!", content_type='text/html')
 
+# JSON kilistázása (raw formátum)
 async def get_json(request):
     if os.path.exists(REACTION_ROLES_FILE):
         with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
@@ -187,7 +177,7 @@ async def get_json(request):
     else:
         return web.Response(text="{}", content_type="application/json")
 
-# Webserver setup
+# Webszerver indítása
 app = web.Application()
 app.router.add_get("/", handle)
 app.router.add_get("/reaction_roles.json", get_json)
@@ -198,7 +188,17 @@ async def start_webserver():
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
 
-# Futtatás
+# 🆕 dbhelp parancs (súgó)
+@bot.command()
+async def dbhelp(ctx):
+    try:
+        with open("help.txt", "r", encoding="utf-8") as f:
+            help_text = f.read()
+        await ctx.send(f"📘 **Súgó:**\n```{help_text}```")
+    except Exception as e:
+        await ctx.send(f"⚠️ Nem sikerült megjeleníteni a súgót: {e}")
+
+# Fő futtatás
 async def main():
     await start_webserver()
     await bot.start(DISCORD_TOKEN)
