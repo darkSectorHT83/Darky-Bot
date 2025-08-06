@@ -1,13 +1,3 @@
-# Ne küldje fel az érzékeny környezeti változókat
 .env
-
-# Python cache fájlok
 __pycache__/
 *.pyc
-
-# IDE és rendszer specifikus fájlok
-.vscode/
-.DS_Store
-
-# Lokális mentés, ha nem akarod GitHubon tárolni (de te igen, szóval ezt ne hagyd ki ha menteni akarod)
-# reaction_roles.json
