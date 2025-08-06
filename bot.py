@@ -23,7 +23,29 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 # Reaction roles fájl
 REACTION_ROLES_FILE = "reaction_roles.json"
 
-# Reaction roles betöltése fájlból (guild → message → emoji → role)
+# Engedélyezett szerverek betöltése
+ALLOWED_GUILDS_FILE = "Reactions.ID.txt"
+
+def load_allowed_guilds():
+    if not os.path.exists(ALLOWED_GUILDS_FILE):
+        return set()
+    with open(ALLOWED_GUILDS_FILE, "r", encoding="utf-8") as f:
+        return set(int(line.strip()) for line in f if line.strip().isdigit())
+
+allowed_guilds = load_allowed_guilds()
+
+# Globális parancsellenőrzés
+@bot.check
+async def globally_block_dms_and_unauthorized_guilds(ctx):
+    if ctx.guild is None:
+        await ctx.send("⛔ Ezt a parancsot csak szerveren lehet használni.")
+        return False
+    if ctx.guild.id not in allowed_guilds:
+        await ctx.send("⛔ Ez a parancs ebben a szerverben nem engedélyezett.")
+        return False
+    return True
+
+# Reaction roles betöltése fájlból
 if os.path.exists(REACTION_ROLES_FILE):
     with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
         reaction_roles = json.load(f)
@@ -65,7 +87,6 @@ async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
     save_reaction_roles()
 
     try:
-        # Próbálja meg elérni az üzenetet és hozzáadni az emojit
         message = await channel.fetch_message(message_id)
         await message.add_reaction(emoji)
     except Exception as e:
@@ -108,10 +129,20 @@ async def listreactions(ctx):
             msg += f"   {emoji} → `{role}`\n"
     await ctx.send(msg)
 
+# Szerverlista újratöltése (csak owner)
+@bot.command()
+@commands.is_owner()
+async def reloadguilds(ctx):
+    global allowed_guilds
+    allowed_guilds = load_allowed_guilds()
+    await ctx.send("🔁 Engedélyezett szerverek listája frissítve.")
+
 # Reakció hozzáadás
 @bot.event
 async def on_raw_reaction_add(payload):
     if payload.user_id == bot.user.id:
+        return
+    if payload.guild_id not in allowed_guilds:
         return
 
     guild = bot.get_guild(payload.guild_id)
@@ -140,6 +171,9 @@ async def on_raw_reaction_add(payload):
 # Reakció eltávolítás
 @bot.event
 async def on_raw_reaction_remove(payload):
+    if payload.guild_id not in allowed_guilds:
+        return
+
     guild = bot.get_guild(payload.guild_id)
     if not guild:
         return
@@ -164,7 +198,7 @@ async def on_raw_reaction_remove(payload):
 
 # 🔴 HTML válasz OBS + Replit webnézethez
 async def handle(request):
-    text_color = "#00eeff"  # világoskék
+    text_color = "#00eeff"
 
     html_content = f"""
     <html>
@@ -187,7 +221,7 @@ async def handle(request):
     """
     return web.Response(text=html_content, content_type='text/html')
 
-# Webszerver indítása (UptimeRobot, OBS)
+# Webszerver indítása
 app = web.Application()
 app.router.add_get("/", handle)
 
