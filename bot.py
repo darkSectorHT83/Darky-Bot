@@ -6,11 +6,11 @@ import json
 from aiohttp import web
 import asyncio
 
-# .env fájl betöltése
+# .env betöltése
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
 
-# Intents
+# Intents beállítása
 intents = discord.Intents.default()
 intents.message_content = True
 intents.reactions = True
@@ -20,40 +20,42 @@ intents.members = True
 # Bot példány
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Fájlnevek
-REACTION_ROLES_FILE = "reaction_roles.json"
+# Engedélyezett szerverek betöltése
 ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
 
-# Engedélyezett szerverek betöltése
 def load_allowed_guilds():
     if not os.path.exists(ALLOWED_GUILDS_FILE):
-        return []
+        return set()
     with open(ALLOWED_GUILDS_FILE, "r", encoding="utf-8") as f:
-        return [int(line.strip()) for line in f if line.strip().isdigit()]
+        return set(int(line.strip()) for line in f if line.strip().isdigit())
 
 allowed_guilds = load_allowed_guilds()
 
-# Globális parancsengedélyezés
+# Globális parancsellenőrzés
 @bot.check
-async def check_allowed_guilds(ctx):
-    return ctx.guild is not None and ctx.guild.id in allowed_guilds
+async def guild_permission_check(ctx):
+    return ctx.guild and ctx.guild.id in allowed_guilds
 
-# Reaction role adatbázis betöltése
+# Reaction roles fájl
+REACTION_ROLES_FILE = "reaction_roles.json"
+
 if os.path.exists(REACTION_ROLES_FILE):
     with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
         reaction_roles = json.load(f)
         reaction_roles = {
-            int(gid): {int(mid): emoji_roles for mid, emoji_roles in msgs.items()}
-            for gid, msgs in reaction_roles.items()
+            int(guild_id): {
+                int(msg_id): msg_roles
+                for msg_id, msg_roles in guild_data.items()
+            }
+            for guild_id, guild_data in reaction_roles.items()
         }
 else:
     reaction_roles = {}
 
-# Mentés
 def save_reaction_roles():
     with open(REACTION_ROLES_FILE, "w", encoding="utf-8") as f:
         json.dump({
-            str(gid): {str(mid): roles for mid, roles in msgs.items()}
+            str(gid): {str(mid): emoji_roles for mid, emoji_roles in msgs.items()}
             for gid, msgs in reaction_roles.items()
         }, f, ensure_ascii=False, indent=4)
 
@@ -77,9 +79,10 @@ async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
     try:
         message = await channel.fetch_message(message_id)
         await message.add_reaction(emoji)
-        await ctx.send(f'🔧 Emoji `{emoji}` hozzárendelve ranghoz: `{role_name}` (üzenet ID: `{message_id}`)')
     except Exception as e:
         await ctx.send(f'⚠️ Emoji hozzárendelve, de nem sikerült reagálni az üzenetre: {e}')
+    else:
+        await ctx.send(f'🔧 Emoji `{emoji}` hozzárendelve ranghoz: `{role_name}` (üzenet ID: `{message_id}`)')
 
 @bot.command()
 @commands.has_permissions(administrator=True)
@@ -118,6 +121,7 @@ async def listreactions(ctx):
 async def on_raw_reaction_add(payload):
     if payload.user_id == bot.user.id:
         return
+
     if payload.guild_id not in allowed_guilds:
         return
 
@@ -170,17 +174,31 @@ async def on_raw_reaction_remove(payload):
         await member.remove_roles(role)
         print(f"❌ {member} elveszítette a szerepet: {role.name}")
 
-# Webszerver HTML válasz (pl. OBS-nek vagy UptimeRobotnak)
+# Webszerver válasz OBS + UptimeRobot
 async def handle(request):
-    html_content = """
+    text_color = "#00eeff"
+    html_content = f"""
     <html>
-    <head><style>
-    body { background-color: transparent; color: #00eeff; font-family: Arial; font-size: 32px; text-align: center; margin-top: 30vh; }
-    </style></head>
-    <body>✅ DarkyBot online!</body></html>
+    <head>
+        <style>
+            body {{
+                background-color: transparent;
+                color: {text_color};
+                font-family: Arial, sans-serif;
+                font-size: 32px;
+                text-align: center;
+                margin-top: 30vh;
+            }}
+        </style>
+    </head>
+    <body>
+        ✅ DarkyBot online!
+    </body>
+    </html>
     """
     return web.Response(text=html_content, content_type='text/html')
 
+# Webszerver
 app = web.Application()
 app.router.add_get("/", handle)
 
@@ -190,8 +208,10 @@ async def start_webserver():
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
 
+# Fő program
 async def main():
     await start_webserver()
     await bot.start(TOKEN)
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
