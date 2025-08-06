@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import json
 from aiohttp import web
 import asyncio
+from discord.ext.commands import CheckFailure
 
 # .env betöltése
 load_dotenv()
@@ -23,7 +24,28 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 # Reaction roles fájl
 REACTION_ROLES_FILE = "reaction_roles.json"
 
-# Reaction roles betöltése fájlból (guild → message → emoji → role)
+# Engedélyezett szerverek fájl
+ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
+
+# Engedélyezett szerverek ellenőrzése
+def is_guild_allowed(guild_id: int) -> bool:
+    if not os.path.exists(ALLOWED_GUILDS_FILE):
+        return False
+    with open(ALLOWED_GUILDS_FILE, "r", encoding="utf-8") as f:
+        allowed_ids = {line.strip() for line in f if line.strip().isdigit()}
+    return str(guild_id) in allowed_ids
+
+# Check dekorátor parancsokhoz
+def is_allowed_guild():
+    async def predicate(ctx):
+        if ctx.guild is None:
+            raise CheckFailure("❌ Ez a parancs csak szervereken működik.")
+        if not is_guild_allowed(ctx.guild.id):
+            raise CheckFailure("❌ Ez a szerver nincs engedélyezve. Látogasson el ide: https://www.darksector.hu")
+        return True
+    return commands.check(predicate)
+
+# Reaction roles betöltése
 if os.path.exists(REACTION_ROLES_FILE):
     with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
         reaction_roles = json.load(f)
@@ -37,7 +59,7 @@ if os.path.exists(REACTION_ROLES_FILE):
 else:
     reaction_roles = {}
 
-# Fájlba mentés
+# Mentés fájlba
 def save_reaction_roles():
     with open(REACTION_ROLES_FILE, "w", encoding="utf-8") as f:
         json.dump({
@@ -45,37 +67,26 @@ def save_reaction_roles():
             for gid, msgs in reaction_roles.items()
         }, f, ensure_ascii=False, indent=4)
 
-# Szerverengedélyezés ellenőrzése
-ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
-
-def is_guild_allowed(guild_id: int) -> bool:
-    if not os.path.exists(ALLOWED_GUILDS_FILE):
-        return False
-    with open(ALLOWED_GUILDS_FILE, "r", encoding="utf-8") as f:
-        allowed_ids = {line.strip() for line in f if line.strip().isdigit()}
-    return str(guild_id) in allowed_ids
-
-@bot.check
-async def global_guild_check(ctx):
-    if ctx.guild is None:
-        return False  # Tiltás DM-ben
-    if is_guild_allowed(ctx.guild.id):
-        return True
-    else:
-        try:
-            await ctx.send("❌ Ez a szerver nincs engedélyezve. Látogasson el ide: https://www.darksector.hu")
-        except discord.Forbidden:
-            pass
-        return False
-
 # Bot készen áll
 @bot.event
 async def on_ready():
     print(f'✅ Bot bejelentkezett: {bot.user.name}')
 
-# Emoji–szerep hozzárendelés parancs
+# Hibaüzenet egyszeri kiírás
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        try:
+            await ctx.send(str(error))
+        except discord.Forbidden:
+            pass
+    else:
+        raise error
+
+# Parancs: emoji–szerep hozzárendelés
 @bot.command()
 @commands.has_permissions(administrator=True)
+@is_allowed_guild()
 async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
     guild_id = ctx.guild.id
     channel = ctx.channel
@@ -95,9 +106,10 @@ async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
     else:
         await ctx.send(f'🔧 Emoji `{emoji}` hozzárendelve ranghoz: `{role_name}` (üzenet ID: `{message_id}`)')
 
-# Emoji–szerep törlés parancs
+# Parancs: emoji–szerep törlés
 @bot.command()
 @commands.has_permissions(administrator=True)
+@is_allowed_guild()
 async def removereaction(ctx, message_id: int, emoji: str):
     guild_id = ctx.guild.id
     if (guild_id in reaction_roles and
@@ -114,9 +126,10 @@ async def removereaction(ctx, message_id: int, emoji: str):
     else:
         await ctx.send('⚠️ Nincs ilyen emoji vagy üzenet ID a rendszerben.')
 
-# Reakció lista lekérdezés
+# Parancs: reakciók listázása
 @bot.command()
 @commands.has_permissions(administrator=True)
+@is_allowed_guild()
 async def listreactions(ctx):
     guild_id = ctx.guild.id
     if guild_id not in reaction_roles or not reaction_roles[guild_id]:
@@ -149,7 +162,6 @@ async def on_raw_reaction_add(payload):
 
     role_name = roles_for_message.get(emoji)
     if not role_name:
-        print(f"⚠️ Ismeretlen emoji: {emoji} (üzenet ID: {message_id})")
         return
 
     role = discord.utils.get(guild.roles, name=role_name)
@@ -184,7 +196,7 @@ async def on_raw_reaction_remove(payload):
         await member.remove_roles(role)
         print(f"❌ {member} elveszítette a szerepet: {role.name}")
 
-# 🔴 HTML válasz OBS + Replit webnézethez
+# Webszerver HTML válasz OBS/UptimeRobot számára
 async def handle(request):
     text_color = "#00eeff"
     html_content = f"""
@@ -215,7 +227,7 @@ app.router.add_get("/", handle)
 async def start_webserver():
     runner = web.AppRunner(app)
     await runner.setup()
-    port = int(os.getenv("PORT", 8080))  # Railway kompatibilitás
+    port = int(os.getenv("PORT", 8080))  # Railway támogatás
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
