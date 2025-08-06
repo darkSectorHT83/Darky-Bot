@@ -5,7 +5,7 @@ import json
 from aiohttp import web
 import asyncio
 
-# Tokenek Render environment-ből
+# Token közvetlenül Render környezeti változóból
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
 # Intents
@@ -15,10 +15,9 @@ intents.reactions = True
 intents.guilds = True
 intents.members = True
 
-# Bot példány
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Fájlok
+# Fájlnevek
 ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
 REACTION_ROLES_FILE = "reaction_roles.json"
 
@@ -31,7 +30,7 @@ def load_allowed_guilds():
 
 allowed_guilds = load_allowed_guilds()
 
-# Reaction roles betöltése
+# Reakció szerepkörök betöltése
 if os.path.exists(REACTION_ROLES_FILE):
     with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
         try:
@@ -45,7 +44,7 @@ if os.path.exists(REACTION_ROLES_FILE):
 else:
     reaction_roles = {}
 
-# Mentés
+# Mentés JSON-ba
 def save_reaction_roles():
     with open(REACTION_ROLES_FILE, "w", encoding="utf-8") as f:
         json.dump({
@@ -62,6 +61,7 @@ async def guild_permission_check(ctx):
 async def on_ready():
     print(f"✅ Bejelentkezett: {bot.user.name}")
 
+# Parancsok
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
@@ -117,7 +117,23 @@ async def listreactions(ctx):
             msg += f"   {emoji} → `{role}`\n"
     await ctx.send(msg)
 
-# Reakciókezelés
+@bot.command()
+async def help(ctx):
+    try:
+        with open("help.txt", "r", encoding="utf-8") as f:
+            help_text = f.read()
+
+        await ctx.send(f"📘 **Súgó:**\n```{help_text}```")
+
+        try:
+            await ctx.author.send(f"📬 **Súgó privátban is:**\n```{help_text}```")
+        except discord.Forbidden:
+            await ctx.send("⚠️ Nem tudtam privátban is elküldeni (DM letiltva?).")
+
+    except Exception as e:
+        await ctx.send(f"⚠️ Nem sikerült megjeleníteni a súgót: {e}")
+
+# Reakció események
 @bot.event
 async def on_raw_reaction_add(payload):
     if payload.user_id == bot.user.id:
@@ -160,21 +176,16 @@ async def on_raw_reaction_remove(payload):
             await member.remove_roles(role)
             print(f"❌ {member} elvesztette: {role.name}")
 
-# Webszerver: gyökér
+# Webszerver
 async def handle(request):
     return web.Response(text="✅ DarkyBot él!", content_type='text/html')
 
-# JSON megtekintő – nyersen, szépen formázva
 async def get_json(request):
-    if not os.path.exists(REACTION_ROLES_FILE):
-        return web.json_response({}, status=200, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=4))
-
-    with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
-        try:
-            data = json.load(f)
-        except json.JSONDecodeError:
-            data = {}
-    return web.json_response(data, status=200, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=4))
+    if os.path.exists(REACTION_ROLES_FILE):
+        with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
+            return web.Response(text=f.read(), content_type="application/json")
+    else:
+        return web.Response(text="{}", content_type="application/json")
 
 # Webserver setup
 app = web.Application()
@@ -187,7 +198,7 @@ async def start_webserver():
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
 
-# Indítás
+# Futtatás
 async def main():
     await start_webserver()
     await bot.start(DISCORD_TOKEN)
