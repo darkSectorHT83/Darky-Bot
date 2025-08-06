@@ -34,16 +34,10 @@ def load_allowed_guilds():
 
 allowed_guilds = load_allowed_guilds()
 
-# Globális parancsellenőrzés
+# Globális parancsellenőrzés (nem küld üzenetet!)
 @bot.check
 async def globally_block_dms_and_unauthorized_guilds(ctx):
-    if ctx.guild is None:
-        await ctx.send("⛔ Ezt a parancsot csak szerveren lehet használni.")
-        return False
-    if ctx.guild.id not in allowed_guilds:
-        await ctx.send("⛔ Ez a parancs ebben a szerverben nem engedélyezett.")
-        return False
-    return True
+    return ctx.guild is not None and ctx.guild.id in allowed_guilds
 
 # Reaction roles betöltése fájlból
 if os.path.exists(REACTION_ROLES_FILE):
@@ -158,7 +152,6 @@ async def on_raw_reaction_add(payload):
 
     role_name = roles_for_message.get(emoji)
     if not role_name:
-        print(f"⚠️ Ismeretlen emoji: {emoji} (üzenet ID: {message_id})")
         return
 
     role = discord.utils.get(guild.roles, name=role_name)
@@ -195,6 +188,17 @@ async def on_raw_reaction_remove(payload):
     if role and member:
         await member.remove_roles(role)
         print(f"❌ {member} elveszítette a szerepet: {role.name}")
+
+# Hibaüzenet küldés, ha parancsot tilt a check
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        if ctx.guild is None:
+            await ctx.send("⛔ Ezt a parancsot csak szerveren lehet használni.")
+        elif ctx.guild.id not in allowed_guilds:
+            await ctx.send("⛔ Ez a parancs ebben a szerverben nem engedélyezett.")
+    else:
+        raise error  # vagy: print(f"Hiba: {error}")
 
 # 🔴 HTML válasz OBS + Replit webnézethez
 async def handle(request):
