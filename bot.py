@@ -41,11 +41,12 @@ def is_guild_allowed():
         raise commands.CheckFailure("❌ Ez a szerver nincs engedélyezve. Látogasson el ide: https://www.darksector.hu")
     return commands.check(predicate)
 
-# Globális hibafigyelő – csak akkor küld hibát, ha tényleg szükséges
+# Globális hibafigyelő – pontosított
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CheckFailure):
-        await ctx.send(str(error))
+        if ctx.guild and ctx.guild.id not in allowed_guilds:
+            await ctx.send("❌ Ez a szerver nincs engedélyezve. Látogasson el ide: https://www.darksector.hu")
     elif isinstance(error, commands.MissingPermissions):
         await ctx.send("🚫 Nincs jogosultságod a parancs használatához.")
     else:
