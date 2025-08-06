@@ -20,18 +20,20 @@ intents.members = True
 # Bot példány
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Engedélyezett szerverek betöltése
-ALLOWED_SERVERS_FILE = "Reaction.ID.txt"
-def is_server_allowed(guild_id):
-    if not os.path.exists(ALLOWED_SERVERS_FILE):
-        return False
-    with open(ALLOWED_SERVERS_FILE, "r") as f:
-        allowed_ids = f.read().splitlines()
-    return str(guild_id) in allowed_ids
-
 # Reaction roles fájl
 REACTION_ROLES_FILE = "reaction_roles.json"
+ALLOWED_SERVERS_FILE = "Reaction.ID.txt"
 
+# Engedélyezett szerverek betöltése
+def load_allowed_servers():
+    if os.path.exists(ALLOWED_SERVERS_FILE):
+        with open(ALLOWED_SERVERS_FILE, "r", encoding="utf-8") as f:
+            return {int(line.strip()) for line in f if line.strip().isdigit()}
+    return set()
+
+allowed_servers = load_allowed_servers()
+
+# Reaction roles betöltése fájlból (guild → message → emoji → role)
 if os.path.exists(REACTION_ROLES_FILE):
     with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
         reaction_roles = json.load(f)
@@ -45,6 +47,7 @@ if os.path.exists(REACTION_ROLES_FILE):
 else:
     reaction_roles = {}
 
+# Fájlba mentés
 def save_reaction_roles():
     with open(REACTION_ROLES_FILE, "w", encoding="utf-8") as f:
         json.dump({
@@ -52,16 +55,21 @@ def save_reaction_roles():
             for gid, msgs in reaction_roles.items()
         }, f, ensure_ascii=False, indent=4)
 
+# Bot készen áll
 @bot.event
 async def on_ready():
     print(f'✅ Bot bejelentkezett: {bot.user.name}')
+
+# 🔒 Ellenőrzés engedélyezett szerverhez
+def is_guild_allowed(ctx):
+    return ctx.guild and ctx.guild.id in allowed_servers
 
 # Emoji–szerep hozzárendelés parancs
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
-    if not is_server_allowed(ctx.guild.id):
-        await ctx.send("❌ Sajnálom, ennek a szervernek nincs engedélyezve a bot használata.")
+    if not is_guild_allowed(ctx):
+        await ctx.send("❌ Ez a szerver nincs engedélyezve a bot használatára.")
         return
 
     guild_id = ctx.guild.id
@@ -86,8 +94,8 @@ async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def removereaction(ctx, message_id: int, emoji: str):
-    if not is_server_allowed(ctx.guild.id):
-        await ctx.send("❌ Sajnálom, ennek a szervernek nincs engedélyezve a bot használata.")
+    if not is_guild_allowed(ctx):
+        await ctx.send("❌ Ez a szerver nincs engedélyezve a bot használatára.")
         return
 
     guild_id = ctx.guild.id
@@ -109,8 +117,8 @@ async def removereaction(ctx, message_id: int, emoji: str):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def listreactions(ctx):
-    if not is_server_allowed(ctx.guild.id):
-        await ctx.send("❌ Sajnálom, ennek a szervernek nincs engedélyezve a bot használata.")
+    if not is_guild_allowed(ctx):
+        await ctx.send("❌ Ez a szerver nincs engedélyezve a bot használatára.")
         return
 
     guild_id = ctx.guild.id
@@ -131,7 +139,7 @@ async def on_raw_reaction_add(payload):
     if payload.user_id == bot.user.id:
         return
 
-    if not is_server_allowed(payload.guild_id):
+    if payload.guild_id not in allowed_servers:
         return
 
     guild = bot.get_guild(payload.guild_id)
@@ -159,7 +167,7 @@ async def on_raw_reaction_add(payload):
 # Reakció eltávolítás
 @bot.event
 async def on_raw_reaction_remove(payload):
-    if not is_server_allowed(payload.guild_id):
+    if payload.guild_id not in allowed_servers:
         return
 
     guild = bot.get_guild(payload.guild_id)
@@ -184,20 +192,20 @@ async def on_raw_reaction_remove(payload):
         await member.remove_roles(role)
         print(f"❌ {member} elveszítette a szerepet: {role.name}")
 
-# 🔴 HTML válasz
+# 🔴 HTML válasz OBS + Replit webnézethez
 async def handle(request):
-    html_content = f"""
+    html_content = """
     <html>
     <head>
         <style>
-            body {{
+            body {
                 background-color: transparent;
                 color: #00eeff;
                 font-family: Arial, sans-serif;
                 font-size: 32px;
                 text-align: center;
                 margin-top: 30vh;
-            }}
+            }
         </style>
     </head>
     <body>
@@ -207,7 +215,7 @@ async def handle(request):
     """
     return web.Response(text=html_content, content_type='text/html')
 
-# Webserver
+# Webszerver indítása (Render / OBS)
 app = web.Application()
 app.router.add_get("/", handle)
 
@@ -217,9 +225,9 @@ async def start_webserver():
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
 
+# Futtatás
 async def main():
     await start_webserver()
     await bot.start(TOKEN)
 
 asyncio.run(main())
-
