@@ -7,45 +7,25 @@ from aiohttp import web
 import asyncio
 from discord.ext.commands import CheckFailure
 
-# .env betöltése
+# .env betoltese
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
 
-# Intents beállítása
+# Intents beallitasa
 intents = discord.Intents.default()
 intents.message_content = True
 intents.reactions = True
 intents.guilds = True
 intents.members = True
 
-# Bot példány
+# Bot peldany
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Reaction roles fájl
+# Reaction roles fajl
 REACTION_ROLES_FILE = "reaction_roles.json"
-
-# Engedélyezett szerverek fájl
 ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
 
-# Engedélyezett szerverek ellenőrzése
-def is_guild_allowed(guild_id: int) -> bool:
-    if not os.path.exists(ALLOWED_GUILDS_FILE):
-        return False
-    with open(ALLOWED_GUILDS_FILE, "r", encoding="utf-8") as f:
-        allowed_ids = {line.strip() for line in f if line.strip().isdigit()}
-    return str(guild_id) in allowed_ids
-
-# Check dekorátor parancsokhoz
-def is_allowed_guild():
-    async def predicate(ctx):
-        if ctx.guild is None:
-            raise CheckFailure("❌ Ez a parancs csak szervereken működik.")
-        if not is_guild_allowed(ctx.guild.id):
-            raise CheckFailure("❌ Ez a szerver nincs engedélyezve. Látogasson el ide: https://www.darksector.hu")
-        return True
-    return commands.check(predicate)
-
-# Reaction roles betöltése
+# Reaction roles betoltese fajlbol
 if os.path.exists(REACTION_ROLES_FILE):
     with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
         reaction_roles = json.load(f)
@@ -59,7 +39,7 @@ if os.path.exists(REACTION_ROLES_FILE):
 else:
     reaction_roles = {}
 
-# Mentés fájlba
+# Fajlba mentes
 def save_reaction_roles():
     with open(REACTION_ROLES_FILE, "w", encoding="utf-8") as f:
         json.dump({
@@ -67,12 +47,30 @@ def save_reaction_roles():
             for gid, msgs in reaction_roles.items()
         }, f, ensure_ascii=False, indent=4)
 
-# Bot készen áll
+# Engedelyezett szerverek ellenorzese
+
+def is_guild_allowed(guild_id: int) -> bool:
+    if not os.path.exists(ALLOWED_GUILDS_FILE):
+        return False
+    with open(ALLOWED_GUILDS_FILE, "r", encoding="utf-8") as f:
+        allowed_ids = {line.strip() for line in f if line.strip().isdigit()}
+    return str(guild_id) in allowed_ids
+
+def is_allowed_guild():
+    async def predicate(ctx):
+        if ctx.guild is None:
+            raise CheckFailure("❌ Ez a parancs csak szervereken működik.")
+        if not is_guild_allowed(ctx.guild.id):
+            raise CheckFailure("❌ Ez a szerver nincs engedélyezve. Látogasson el ide: https://www.darksector.hu")
+        return True
+    return commands.check(predicate)
+
+# Bot keszen all
 @bot.event
 async def on_ready():
     print(f'✅ Bot bejelentkezett: {bot.user.name}')
 
-# Hibaüzenet egyszeri kiírás
+# Parancs hiba kezelese
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CheckFailure):
@@ -83,7 +81,22 @@ async def on_command_error(ctx, error):
     else:
         raise error
 
-# Parancs: emoji–szerep hozzárendelés
+# Parancs utani torles, ha tobb mint 1 uzenetet kuld a bot
+@bot.event
+async def on_command_completion(ctx):
+    def is_own_message(m):
+        return m.author == bot.user
+
+    messages = await ctx.channel.history(limit=5).flatten()
+    own_messages = [m for m in messages if is_own_message(m)]
+
+    if len(own_messages) >= 2:
+        try:
+            await own_messages[1].delete()
+        except discord.HTTPException:
+            pass
+
+# Emoji–szerep hozzarendeles
 @bot.command()
 @commands.has_permissions(administrator=True)
 @is_allowed_guild()
@@ -106,7 +119,7 @@ async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
     else:
         await ctx.send(f'🔧 Emoji `{emoji}` hozzárendelve ranghoz: `{role_name}` (üzenet ID: `{message_id}`)')
 
-# Parancs: emoji–szerep törlés
+# Emoji–szerep torles
 @bot.command()
 @commands.has_permissions(administrator=True)
 @is_allowed_guild()
@@ -126,7 +139,7 @@ async def removereaction(ctx, message_id: int, emoji: str):
     else:
         await ctx.send('⚠️ Nincs ilyen emoji vagy üzenet ID a rendszerben.')
 
-# Parancs: reakciók listázása
+# Reakcio lista
 @bot.command()
 @commands.has_permissions(administrator=True)
 @is_allowed_guild()
@@ -143,7 +156,7 @@ async def listreactions(ctx):
             msg += f"   {emoji} → `{role}`\n"
     await ctx.send(msg)
 
-# Reakció hozzáadás
+# Reakcio hozzaadas
 @bot.event
 async def on_raw_reaction_add(payload):
     if payload.user_id == bot.user.id:
@@ -162,6 +175,7 @@ async def on_raw_reaction_add(payload):
 
     role_name = roles_for_message.get(emoji)
     if not role_name:
+        print(f"⚠️ Ismeretlen emoji: {emoji} (üzenet ID: {message_id})")
         return
 
     role = discord.utils.get(guild.roles, name=role_name)
@@ -171,7 +185,7 @@ async def on_raw_reaction_add(payload):
         await member.add_roles(role)
         print(f"✅ {member} kapott szerepet: {role.name}")
 
-# Reakció eltávolítás
+# Reakcio eltavolitas
 @bot.event
 async def on_raw_reaction_remove(payload):
     guild = bot.get_guild(payload.guild_id)
@@ -196,7 +210,7 @@ async def on_raw_reaction_remove(payload):
         await member.remove_roles(role)
         print(f"❌ {member} elveszítette a szerepet: {role.name}")
 
-# Webszerver HTML válasz OBS/UptimeRobot számára
+# Webszerver valasz OBS / UptimeRobot szamara
 async def handle(request):
     text_color = "#00eeff"
     html_content = f"""
@@ -220,18 +234,17 @@ async def handle(request):
     """
     return web.Response(text=html_content, content_type='text/html')
 
-# Webszerver indítása
+# Webszerver inditasa
 app = web.Application()
 app.router.add_get("/", handle)
 
 async def start_webserver():
     runner = web.AppRunner(app)
     await runner.setup()
-    port = int(os.getenv("PORT", 8080))  # Railway támogatás
-    site = web.TCPSite(runner, "0.0.0.0", port)
+    site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
 
-# Discord bot + webserver futtatása
+# Bot + webszerver egyutt inditasa
 async def main():
     await start_webserver()
     await bot.start(TOKEN)
