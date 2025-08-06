@@ -20,6 +20,24 @@ intents.members = True
 # Bot példány
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+# Engedélyezett szerverek betöltése
+ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
+
+if os.path.exists(ALLOWED_GUILDS_FILE):
+    with open(ALLOWED_GUILDS_FILE, "r", encoding="utf-8") as f:
+        allowed_guilds = {int(line.strip()) for line in f if line.strip().isdigit()}
+else:
+    allowed_guilds = set()
+
+# Engedélyezés ellenőrző dekorátor
+def is_guild_allowed():
+    async def predicate(ctx):
+        if ctx.guild and ctx.guild.id in allowed_guilds:
+            return True
+        await ctx.send("❌ Ez a szerver nincs engedélyezve. Látogasson el ide: https://www.darksector.hu")
+        return False
+    return commands.check(predicate)
+
 # Reaction roles fájl
 REACTION_ROLES_FILE = "reaction_roles.json"
 
@@ -53,6 +71,7 @@ async def on_ready():
 # Emoji–szerep hozzárendelés parancs
 @bot.command()
 @commands.has_permissions(administrator=True)
+@is_guild_allowed()
 async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
     guild_id = ctx.guild.id
     channel = ctx.channel
@@ -65,7 +84,6 @@ async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
     save_reaction_roles()
 
     try:
-        # Próbálja meg elérni az üzenetet és hozzáadni az emojit
         message = await channel.fetch_message(message_id)
         await message.add_reaction(emoji)
     except Exception as e:
@@ -76,6 +94,7 @@ async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
 # Emoji–szerep törlés parancs
 @bot.command()
 @commands.has_permissions(administrator=True)
+@is_guild_allowed()
 async def removereaction(ctx, message_id: int, emoji: str):
     guild_id = ctx.guild.id
     if (guild_id in reaction_roles and
@@ -95,6 +114,7 @@ async def removereaction(ctx, message_id: int, emoji: str):
 # Reakció lista lekérdezés
 @bot.command()
 @commands.has_permissions(administrator=True)
+@is_guild_allowed()
 async def listreactions(ctx):
     guild_id = ctx.guild.id
     if guild_id not in reaction_roles or not reaction_roles[guild_id]:
