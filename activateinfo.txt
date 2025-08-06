@@ -1,1 +1,3 @@
-https://www.darksector.hu
+Szia köszönöm hogy meghívtad a Darky Bot-ot a szerveredre!
+Ez a bot engedély nélkül csak 1 parancsot fogad: !dbactivate
+Kérje engedélyt a használathoz: https://tinyurl.com/DarkyBot
