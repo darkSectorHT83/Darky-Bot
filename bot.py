@@ -21,7 +21,7 @@ intents.members = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 # Engedélyezett szerverek betöltése
-ALLOWED_SERVERS_FILE = "allowed_servers.txt"
+ALLOWED_SERVERS_FILE = "Reaction.ID.txt"
 def is_server_allowed(guild_id):
     if not os.path.exists(ALLOWED_SERVERS_FILE):
         return False
@@ -222,3 +222,4 @@ async def main():
     await bot.start(TOKEN)
 
 asyncio.run(main())
+
