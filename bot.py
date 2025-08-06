@@ -5,19 +5,24 @@ import json
 from aiohttp import web
 import asyncio
 
+# Token a Render environmentből
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
+# Intents
 intents = discord.Intents.default()
 intents.message_content = True
 intents.reactions = True
 intents.guilds = True
 intents.members = True
 
+# Bot példány
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+# Fájlnevek
 ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
 REACTION_ROLES_FILE = "reaction_roles.json"
 
+# Engedélyezett szerverek betöltése
 def load_allowed_guilds():
     if not os.path.exists(ALLOWED_GUILDS_FILE):
         return set()
@@ -26,6 +31,7 @@ def load_allowed_guilds():
 
 allowed_guilds = load_allowed_guilds()
 
+# Reaction roles betöltése
 if os.path.exists(REACTION_ROLES_FILE):
     with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
         try:
@@ -39,6 +45,7 @@ if os.path.exists(REACTION_ROLES_FILE):
 else:
     reaction_roles = {}
 
+# Mentés
 def save_reaction_roles():
     with open(REACTION_ROLES_FILE, "w", encoding="utf-8") as f:
         json.dump({
@@ -46,8 +53,11 @@ def save_reaction_roles():
             for gid, msgs in reaction_roles.items()
         }, f, ensure_ascii=False, indent=4)
 
+# Globális parancsellenőrzés (kivéve !dbactivate)
 @bot.check
 async def guild_permission_check(ctx):
+    if ctx.command.name == "dbactivate":
+        return True
     return ctx.guild and ctx.guild.id in allowed_guilds
 
 @bot.event
@@ -109,24 +119,7 @@ async def listreactions(ctx):
             msg += f"   {emoji} → `{role}`\n"
     await ctx.send(msg)
 
-@bot.command()
-async def dbhelp(ctx):
-    try:
-        with open("help.txt", "r", encoding="utf-8") as f:
-            content = f.read()
-        await ctx.send(f"```{content}```")
-    except FileNotFoundError:
-        await ctx.send("📁 A `help.txt` fájl nem található.")
-
-@bot.command()
-async def dbactivate(ctx):
-    try:
-        with open("activateinfo.txt", "r", encoding="utf-8") as f:
-            content = f.read()
-        await ctx.send(content)  # Nem kódblokkban küldjük
-    except FileNotFoundError:
-        await ctx.send("📁 Az `activateinfo.txt` fájl nem található.")
-
+# Reakció hozzáadás
 @bot.event
 async def on_raw_reaction_add(payload):
     if payload.user_id == bot.user.id:
@@ -149,6 +142,7 @@ async def on_raw_reaction_add(payload):
             await member.add_roles(role)
             print(f"✅ {member} kapta: {role.name}")
 
+# Reakció eltávolítás
 @bot.event
 async def on_raw_reaction_remove(payload):
     if payload.guild_id not in allowed_guilds:
@@ -169,9 +163,11 @@ async def on_raw_reaction_remove(payload):
             await member.remove_roles(role)
             print(f"❌ {member} elvesztette: {role.name}")
 
+# Webszerver alap route
 async def handle(request):
     return web.Response(text="✅ DarkyBot él!", content_type='text/html')
 
+# JSON megtekintés
 async def get_json(request):
     if os.path.exists(REACTION_ROLES_FILE):
         with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
@@ -179,6 +175,7 @@ async def get_json(request):
     else:
         return web.Response(text="{}", content_type="application/json")
 
+# Webszerver setup
 app = web.Application()
 app.router.add_get("/", handle)
 app.router.add_get("/reaction_roles.json", get_json)
@@ -189,6 +186,27 @@ async def start_webserver():
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
 
+# !dbhelp parancs
+@bot.command()
+async def dbhelp(ctx):
+    try:
+        with open("help.txt", "r", encoding="utf-8") as f:
+            help_text = f.read()
+        await ctx.send(f"```{help_text}```")
+    except Exception as e:
+        await ctx.send("❌ Hiba a help.txt betöltésekor.")
+
+# !dbactivate parancs – minden szerveren engedélyezett
+@bot.command()
+async def dbactivate(ctx):
+    try:
+        with open("activateinfo.txt", "r", encoding="utf-8") as f:
+            info = f.read()
+        await ctx.send(info)
+    except Exception as e:
+        await ctx.send("❌ Hiba az activateinfo.txt betöltésekor.")
+
+# Fő program
 async def main():
     await start_webserver()
     await bot.start(DISCORD_TOKEN)
