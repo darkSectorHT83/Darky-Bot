@@ -41,11 +41,14 @@ def is_guild_allowed():
         raise commands.CheckFailure("❌ Ez a szerver nincs engedélyezve. Látogasson el ide: https://www.darksector.hu")
     return commands.check(predicate)
 
-# Globális hibafigyelő – csak akkor küld hibát, ha tényleg szükséges
+# Globális hibafigyelő – CSAK egyszer ír ki hibaüzenetet, ha nem engedélyezett a szerver
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CheckFailure):
-        await ctx.send(str(error))
+        # Ne írja ki újra, ha már egyszer ki lett írva
+        if not hasattr(ctx, '_error_handled'):
+            ctx._error_handled = True
+            await ctx.send(str(error))
     elif isinstance(error, commands.MissingPermissions):
         await ctx.send("🚫 Nincs jogosultságod a parancs használatához.")
     else:
@@ -148,7 +151,7 @@ async def on_raw_reaction_add(payload):
         return
 
     guild = bot.get_guild(payload.guild_id)
-    if not guild:
+    if not guild or payload.guild_id not in allowed_guilds:
         return
 
     message_id = payload.message_id
@@ -174,7 +177,7 @@ async def on_raw_reaction_add(payload):
 @bot.event
 async def on_raw_reaction_remove(payload):
     guild = bot.get_guild(payload.guild_id)
-    if not guild:
+    if not guild or payload.guild_id not in allowed_guilds:
         return
 
     message_id = payload.message_id
