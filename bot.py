@@ -21,6 +21,7 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 # Fájlok
 ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
 REACTION_ROLES_FILE = "reaction_roles.json"
+ACTIVATE_INFO_FILE = "activateinfo.txt"
 
 # Engedélyezett szerverek betöltése
 def load_allowed_guilds():
@@ -127,25 +128,26 @@ async def dbhelp(ctx):
 !addreaction <üzenet_id> <emoji> <szerepkör>   - Reakció hozzáadása
 !removereaction <üzenet_id> <emoji>           - Reakció eltávolítása
 !listreactions                                - Reakciók listázása
-!dbactivate                                   - Szerver aktiválása a Reaction.ID.txt-ben
+!dbactivate                                   - Aktivációs infó megtekintése
 !dbhelp                                       - Ez a súgó
 ```"""
     await ctx.send(help_text)
 
-# !dbactivate parancs – szerver ID hozzáadása
+# !dbactivate – tartalom megjelenítése az activateinfo.txt-ből
 @bot.command()
 async def dbactivate(ctx):
-    guild_id = ctx.guild.id
-
-    if guild_id in allowed_guilds:
-        await ctx.send("✅ Ez a szerver már engedélyezve van.")
+    if not os.path.exists(ACTIVATE_INFO_FILE):
+        await ctx.send("⚠️ Az activateinfo.txt fájl nem található.")
         return
 
-    with open(ALLOWED_GUILDS_FILE, "a", encoding="utf-8") as f:
-        f.write(f"{guild_id}\n")
+    with open(ACTIVATE_INFO_FILE, "r", encoding="utf-8") as f:
+        content = f.read()
 
-    allowed_guilds.add(guild_id)
-    await ctx.send("✅ Sikeresen engedélyezve lett ez a szerver!")
+    if not content.strip():
+        await ctx.send("⚠️ Az activateinfo.txt fájl üres.")
+        return
+
+    await ctx.send(content)
 
 # Reakciókezelés
 @bot.event
