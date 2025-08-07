@@ -53,9 +53,11 @@ def save_reaction_roles():
             for gid, msgs in reaction_roles.items()
         }, f, ensure_ascii=False, indent=4)
 
-# Globális parancsellenőrzés
+# Globális parancsellenőrzés (kivéve !dbactivate)
 @bot.check
 async def guild_permission_check(ctx):
+    if ctx.command.name == "dbactivate":
+        return True
     return ctx.guild and ctx.guild.id in allowed_guilds
 
 @bot.event
@@ -116,6 +118,34 @@ async def listreactions(ctx):
         for emoji, role in emoji_map.items():
             msg += f"   {emoji} → `{role}`\n"
     await ctx.send(msg)
+
+# !dbhelp parancs – összes parancs listázása blokkszövegben
+@bot.command()
+async def dbhelp(ctx):
+    help_text = """```
+📌 Elérhető parancsok:
+!addreaction <üzenet_id> <emoji> <szerepkör>   - Reakció hozzáadása
+!removereaction <üzenet_id> <emoji>           - Reakció eltávolítása
+!listreactions                                - Reakciók listázása
+!dbactivate                                   - Szerver aktiválása a Reaction.ID.txt-ben
+!dbhelp                                       - Ez a súgó
+```"""
+    await ctx.send(help_text)
+
+# !dbactivate parancs – szerver ID hozzáadása
+@bot.command()
+async def dbactivate(ctx):
+    guild_id = ctx.guild.id
+
+    if guild_id in allowed_guilds:
+        await ctx.send("✅ Ez a szerver már engedélyezve van.")
+        return
+
+    with open(ALLOWED_GUILDS_FILE, "a", encoding="utf-8") as f:
+        f.write(f"{guild_id}\n")
+
+    allowed_guilds.add(guild_id)
+    await ctx.send("✅ Sikeresen engedélyezve lett ez a szerver!")
 
 # Reakciókezelés
 @bot.event
@@ -189,8 +219,15 @@ async def start_webserver():
 
 # Indítás
 async def main():
+    print("✅ Bot indítás folyamatban...")
+    print("DISCORD_TOKEN:", "✅ beállítva" if DISCORD_TOKEN else "❌ HIÁNYZIK")
+
     await start_webserver()
-    await bot.start(DISCORD_TOKEN)
+
+    try:
+        await bot.start(DISCORD_TOKEN)
+    except Exception as e:
+        print(f"❌ Hiba a bot indításakor: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())
