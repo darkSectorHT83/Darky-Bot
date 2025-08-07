@@ -1,46 +1,51 @@
 import discord
 from discord.ext import commands, tasks
-import json
 import os
-import aiohttp
+import json
 import asyncio
+import aiohttp
 
-# ----- Fájlnevek -----
-REACTION_FILE = "Reaction.ID.txt"
-TWITCH_FILE = "twitch.json"
-
-# ----- Discord Bot Token & Twitch API Kulcsok (Render-en állítsd be) -----
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
-TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET")
-
-# ----- Intents & Bot Inicializálása -----
+# ───── Beállítások ─────
 intents = discord.Intents.default()
 intents.message_content = True
+intents.guilds = True
+intents.reactions = True
+intents.members = True
+
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ----- Twitch adatbázis betöltése -----
-if os.path.exists(TWITCH_FILE):
-    with open(TWITCH_FILE, "r") as f:
-        twitch_data = json.load(f)
-else:
-    twitch_data = {}
+ALLOWED_SERVERS_FILE = "Reaction.ID.txt"
+TWITCH_DATA_FILE = "twitch.json"
 
-# ----- Jogosult szerverek betöltése -----
-def load_allowed_servers():
-    if not os.path.exists(REACTION_FILE):
-        return []
-    with open(REACTION_FILE, "r") as f:
-        return [line.strip() for line in f if line.strip().isdigit()]
+# ───── Twitch API beállítások ─────
+TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
+TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET")
+TWITCH_TOKEN = None
+TWITCH_HEADERS = {}
+STREAM_STATUS = {}
 
-allowed_servers = load_allowed_servers()
+# ───── Segédfüggvények ─────
 
-# ----- Helper: Jogosultság ellenőrzése -----
-def is_allowed(ctx):
-    return str(ctx.guild.id) in allowed_servers
+def is_server_allowed(server_id):
+    try:
+        with open(ALLOWED_SERVERS_FILE, "r") as f:
+            allowed_ids = [line.strip() for line in f.readlines()]
+            return str(server_id) in allowed_ids
+    except FileNotFoundError:
+        return False
 
-# ----- Helper: Twitch token lekérés -----
-async def get_twitch_token():
+def load_twitch_data():
+    if not os.path.exists(TWITCH_DATA_FILE):
+        return {}
+    with open(TWITCH_DATA_FILE, "r") as f:
+        return json.load(f)
+
+def save_twitch_data(data):
+    with open(TWITCH_DATA_FILE, "w") as f:
+        json.dump(data, f, indent=4)
+
+async def get_twitch_app_token():
+    global TWITCH_TOKEN, TWITCH_HEADERS
     url = "https://id.twitch.tv/oauth2/token"
     params = {
         "client_id": TWITCH_CLIENT_ID,
@@ -50,106 +55,103 @@ async def get_twitch_token():
     async with aiohttp.ClientSession() as session:
         async with session.post(url, params=params) as resp:
             data = await resp.json()
-            return data.get("access_token")
+            TWITCH_TOKEN = data["access_token"]
+            TWITCH_HEADERS = {
+                "Client-ID": TWITCH_CLIENT_ID,
+                "Authorization": f"Bearer {TWITCH_TOKEN}"
+            }
 
-# ----- Helper: Ellenőrzi hogy live-e -----
-async def is_stream_live(user_login, token):
-    url = f"https://api.twitch.tv/helix/streams?user_login={user_login}"
-    headers = {
-        "Client-ID": TWITCH_CLIENT_ID,
-        "Authorization": f"Bearer {token}"
-    }
+async def is_stream_live(username):
+    url = f"https://api.twitch.tv/helix/streams?user_login={username}"
     async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=headers) as resp:
+        async with session.get(url, headers=TWITCH_HEADERS) as resp:
             data = await resp.json()
-            return data["data"][0] if data["data"] else None
+            return len(data["data"]) > 0
 
-# ----- Parancs: Twitch hozzáadása -----
+# ───── Parancsok ─────
+
+@bot.event
+async def on_ready():
+    print(f"A bot bejelentkezett: {bot.user}")
+    await get_twitch_app_token()
+    check_twitch_streams.start()
+
 @bot.command()
-async def addtwitch(ctx, twitch_name):
-    if not is_allowed(ctx):
+async def listreactions(ctx):
+    if not is_server_allowed(ctx.guild.id):
         await ctx.send("❌ Ez a szerver nincs engedélyezve a bot használatára.")
         return
 
-    server_id = str(ctx.guild.id)
-    channel_id = str(ctx.channel.id)
-
-    if twitch_name not in twitch_data:
-        twitch_data[twitch_name] = []
-
-    if channel_id not in twitch_data[twitch_name]:
-        twitch_data[twitch_name].append(channel_id)
-
-        with open(TWITCH_FILE, "w") as f:
-            json.dump(twitch_data, f, indent=2)
-
-        await ctx.send(f"✅ `{twitch_name}` hozzáadva az értesítésekhez ebbe a szobába.")
-    else:
-        await ctx.send(f"ℹ️ `{twitch_name}` már figyelve van ebben a szobában.")
-
-# ----- Parancs: Twitch törlése -----
-@bot.command()
-async def removetwitch(ctx, twitch_name):
-    if not is_allowed(ctx):
-        await ctx.send("❌ Ez a szerver nincs engedélyezve a bot használatára.")
+    file_path = f"reactions_{ctx.guild.id}.json"
+    if not os.path.exists(file_path):
+        await ctx.send("ℹ️ Nincsenek beállított reakciók ebben a szerverben.")
         return
 
-    channel_id = str(ctx.channel.id)
+    with open(file_path, "r") as f:
+        data = json.load(f)
 
-    if twitch_name in twitch_data and channel_id in twitch_data[twitch_name]:
-        twitch_data[twitch_name].remove(channel_id)
-        if not twitch_data[twitch_name]:
-            del twitch_data[twitch_name]  # töröld, ha már sehol nem figyelik
-
-        with open(TWITCH_FILE, "w") as f:
-            json.dump(twitch_data, f, indent=2)
-
-        await ctx.send(f"✅ `{twitch_name}` eltávolítva ebből a szobából.")
-    else:
-        await ctx.send(f"⚠️ `{twitch_name}` nincs figyelve ebben a szobában.")
-
-# ----- Parancs: Twitch listázása -----
-@bot.command()
-async def listtwitch(ctx):
-    if not is_allowed(ctx):
-        await ctx.send("❌ Ez a szerver nincs engedélyezve a bot használatára.")
+    if not data:
+        await ctx.send("ℹ️ Nincsenek beállított reakciók ebben a szerverben.")
         return
 
-    channel_id = str(ctx.channel.id)
-    tracked = [name for name, chans in twitch_data.items() if channel_id in chans]
-
-    if tracked:
-        msg = "📺 Figyelt Twitch csatornák:\n" + "\n".join(f"- {name}" for name in tracked)
-    else:
-        msg = "ℹ️ Ebben a szobában nincs figyelt Twitch csatorna."
+    msg = "**📋 Reakciók listája:**\n"
+    for emoji, role_id in data.items():
+        role = ctx.guild.get_role(role_id)
+        if role:
+            msg += f"{emoji} → {role.name}\n"
+        else:
+            msg += f"{emoji} → *(ismeretlen szerep)*\n"
 
     await ctx.send(msg)
 
-# ----- Stream figyelő háttérfolyamat -----
-live_cache = set()
+@bot.command()
+async def addtwitch(ctx, twitch_name: str):
+    if not is_server_allowed(ctx.guild.id):
+        await ctx.send("❌ Ez a szerver nincs engedélyezve a bot használatára.")
+        return
+
+    data = load_twitch_data()
+    channel_id = str(ctx.channel.id)
+
+    if channel_id not in data:
+        data[channel_id] = []
+
+    if twitch_name.lower() in [x.lower() for x in data[channel_id]]:
+        await ctx.send(f"⚠️ A(z) **{twitch_name}** már hozzá van adva ehhez a szobához.")
+        return
+
+    data[channel_id].append(twitch_name)
+    save_twitch_data(data)
+
+    await ctx.send(f"✅ A(z) **{twitch_name}** Twitch csatorna hozzáadva ehhez a szobához.")
+
+# ───── Twitch figyelő ─────
 
 @tasks.loop(seconds=60)
 async def check_twitch_streams():
-    token = await get_twitch_token()
-    for twitch_name, channels in twitch_data.items():
-        stream = await is_stream_live(twitch_name, token)
-        if stream and twitch_name not in live_cache:
-            live_cache.add(twitch_name)
-            title = stream['title']
-            url = f"https://twitch.tv/{twitch_name}"
-            msg = f"🔴 **{twitch_name} élőben van!**\n🎮 **{title}**\n👉 {url}"
-            for channel_id in channels:
+    data = load_twitch_data()
+    for channel_id, twitch_names in data.items():
+        for twitch_name in twitch_names:
+            username = twitch_name.lower()
+            was_live = STREAM_STATUS.get(username, False)
+            try:
+                now_live = await is_stream_live(username)
+            except:
+                now_live = False
+
+            if now_live and not was_live:
+                STREAM_STATUS[username] = True
                 channel = bot.get_channel(int(channel_id))
                 if channel:
-                    await channel.send(msg)
-        elif not stream and twitch_name in live_cache:
-            live_cache.remove(twitch_name)
+                    embed = discord.Embed(
+                        title="🔴 Élő adás kezdődött!",
+                        description=f"**{twitch_name}** elkezdett streamelni!",
+                        color=discord.Color.purple()
+                    )
+                    await channel.send(embed=embed)
+            elif not now_live and was_live:
+                STREAM_STATUS[username] = False
 
-# ----- Bot események -----
-@bot.event
-async def on_ready():
-    print(f"✅ Bejelentkezve: {bot.user}")
-    check_twitch_streams.start()
+# ───── Futtatás ─────
 
-# ----- Indítás -----
-bot.run(DISCORD_TOKEN)
+bot.run(os.getenv("DISCORD_TOKEN"))
