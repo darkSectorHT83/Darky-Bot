@@ -165,7 +165,7 @@ async def fnnew(ctx):
 
     await ctx.send(content)
 
-# 🔁 ÚJ: fncn parancs – beágyazott válasz az API-ból
+# ✅ JAVÍTOTT fncn parancs
 @bot.command()
 async def fncn(ctx):
     if ctx.guild and ctx.guild.id not in allowed_guilds:
@@ -181,12 +181,17 @@ async def fncn(ctx):
 
             data = await resp.json()
 
+    items = data.get("data", {}).get("items", [])
+    if not items:
+        await ctx.send("ℹ️ Nem található új item.")
+        return
+
     embed = discord.Embed(
-        title="🛍️ Fortnite – Új Shop Itemek",
-        description="A legfrissebb új itemek a shopban!",
+        title="🛍️ Fortnite Shop új itemek beágyazva",
+        description="A legfrissebb új shop itemek:",
         color=discord.Color.blue()
     )
-    for item in data.get("data", []):
+    for item in items:
         name = item.get("name", "Névtelen")
         item_type = item.get("type", {}).get("value", "Ismeretlen")
         embed.add_field(name=name, value=f"Típus: {item_type}", inline=True)
