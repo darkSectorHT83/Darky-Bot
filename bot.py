@@ -127,6 +127,7 @@ async def dbhelp(ctx):
 !listreactions                                - Reakciók listázása
 !dbactivate                                   - Aktivációs infó megtekintése
 !fnnew                                        - Fortnite Shop új itemek
+!fncn                                         - Fortnite Shop új itemek beágyazva
 !dbhelp                                       - Ez a súgó
 ```"""
     await ctx.send(help_text)
@@ -146,7 +147,6 @@ async def dbactivate(ctx):
 
     await ctx.send(content)
 
-# 🔁 ÚJ: fnnew parancs (txt fájlból olvas)
 @bot.command()
 async def fnnew(ctx):
     if ctx.guild and ctx.guild.id not in allowed_guilds:
@@ -164,6 +164,34 @@ async def fnnew(ctx):
         return
 
     await ctx.send(content)
+
+# 🔁 ÚJ: fncn parancs – beágyazott válasz az API-ból
+@bot.command()
+async def fncn(ctx):
+    if ctx.guild and ctx.guild.id not in allowed_guilds:
+        return
+
+    url = "https://fortnite-api.com/v2/cosmetics/new"
+
+    async with ClientSession() as session:
+        async with session.get(url) as resp:
+            if resp.status != 200:
+                await ctx.send("⚠️ Hiba történt az API lekérésekor.")
+                return
+
+            data = await resp.json()
+
+    embed = discord.Embed(
+        title="🛍️ Fortnite – Új Shop Itemek",
+        description="A legfrissebb új itemek a shopban!",
+        color=discord.Color.blue()
+    )
+    for item in data.get("data", []):
+        name = item.get("name", "Névtelen")
+        item_type = item.get("type", {}).get("value", "Ismeretlen")
+        embed.add_field(name=name, value=f"Típus: {item_type}", inline=True)
+
+    await ctx.send(embed=embed)
 
 # Reakciókezelés
 @bot.event
