@@ -1,10 +1,11 @@
 import discord
 from discord.ext import commands
 import os, json, asyncio
-from aiohttp import web
+from aiohttp import web, ClientSession
 
-# Token
+# Token és API kulcs
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+FORTNITE_API_KEY = os.getenv("FORTNITE_API_KEY")
 
 # Intents
 intents = discord.Intents.default()
@@ -99,6 +100,7 @@ async def dbhelp(ctx):
 !removereaction <üzenet_id> <emoji>           - Reakció eltávolítása
 !listreactions                                - Reakciók listázása
 !dbactivate                                   - Aktivációs infó megtekintése
+!fnshop                                       - Fortnite shop megtekintése
 !dbhelp                                       - Ez a súgó
 ```""")
 
@@ -109,6 +111,34 @@ async def dbactivate(ctx):
     with open(ACTIVATE_INFO_FILE, "r", encoding="utf-8") as f:
         content = f.read().strip()
     await ctx.send(content or "⚠️ Az activateinfo.txt fájl üres.")
+
+@bot.command()
+async def fnshop(ctx):
+    if ctx.guild.id not in allowed_guilds:
+        return await ctx.send("⛔ Ez a parancs csak engedélyezett szervereken használható.")
+    
+    url = "https://fortnite-api.com/v2/shop/br"
+    headers = {"Authorization": FORTNITE_API_KEY}
+    
+    async with ClientSession() as session:
+        async with session.get(url, headers=headers) as resp:
+            if resp.status != 200:
+                return await ctx.send("❌ Nem sikerült lekérni a Fortnite shopot.")
+            data = await resp.json()
+    
+    shop_data = data.get("data", {}).get("featured", {}).get("entries", [])
+    if not shop_data:
+        return await ctx.send("⚠️ A shop jelenleg üres vagy nem elérhető.")
+
+    embed = discord.Embed(title="🛒 Fortnite Shop – Featured", color=discord.Color.blue())
+    for item in shop_data[:10]:  # max 10 item
+        name = item["items"][0].get("name", "Névtelen")
+        price = item.get("finalPrice", 0)
+        image = item["items"][0].get("images", {}).get("icon")
+        embed.add_field(name=f"{name}", value=f"Ár: {price} V-Bucks", inline=False)
+        if image: embed.set_thumbnail(url=image)
+
+    await ctx.send(embed=embed)
 
 # --- Reakció események ---
 
