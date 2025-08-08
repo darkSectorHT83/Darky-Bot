@@ -1,1 +1,1 @@
-0 #0 only list or 1 all server
+1 #0 only list or 1 all server
