@@ -1,195 +1,167 @@
 import discord
 from discord.ext import commands
+import os, json, asyncio
 from aiohttp import web
-import json
-import os
 
+# Token
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+
+# Intents
 intents = discord.Intents.default()
-intents.message_content = True
-intents.guilds = True
-intents.members = True
+intents.message_content = intents.reactions = intents.guilds = intents.members = True
 
+# Bot
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# === SEGÉDFÜGGVÉNYEK ===
+# Fájlnevek
+ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
+REACTION_ROLES_FILE = "reaction_roles.json"
+ACTIVATE_INFO_FILE = "activateinfo.txt"
 
-def is_server_allowed(guild_id):
-    if os.path.exists("all_server_allow.txt"):
-        with open("all_server_allow.txt", "r") as f:
-            value = f.read().strip()
-            if value == "1":
-                return True
+# Engedélyezett szerverek
+def load_allowed_guilds():
+    if not os.path.exists(ALLOWED_GUILDS_FILE): return set()
+    with open(ALLOWED_GUILDS_FILE, "r", encoding="utf-8") as f:
+        return {int(line.strip()) for line in f if line.strip().isdigit()}
+allowed_guilds = load_allowed_guilds()
 
-    if os.path.exists("Reaction.ID.txt"):
-        with open("Reaction.ID.txt", "r") as f:
-            allowed_ids = [line.strip() for line in f if line.strip().isdigit()]
-        return str(guild_id) in allowed_ids
+# Reakció szerepkörök betöltése
+def load_reaction_roles():
+    if os.path.exists(REACTION_ROLES_FILE):
+        try:
+            with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
+                return {int(gid): {int(mid): em for mid, em in msgs.items()} for gid, msgs in json.load(f).items()}
+        except json.JSONDecodeError:
+            pass
+    return {}
+reaction_roles = load_reaction_roles()
 
-    return False
+def save_reaction_roles():
+    with open(REACTION_ROLES_FILE, "w", encoding="utf-8") as f:
+        json.dump({str(gid): {str(mid): em for mid, em in msgs.items()} for gid, msgs in reaction_roles.items()}, f, ensure_ascii=False, indent=4)
 
-def is_user_allowed(ctx):
-    if ctx.author.guild_permissions.administrator:
-        return True
+# Globális engedélyellenőrzés (!dbactivate kivétel)
+@bot.check
+async def guild_check(ctx):
+    return ctx.command.name == "dbactivate" or (ctx.guild and ctx.guild.id in allowed_guilds)
 
-    if os.path.exists("commands.allow.txt"):
-        with open("commands.allow.txt", "r") as f:
-            value = f.read().strip()
-            if value == "0":
-                return ctx.author.guild_permissions.administrator
+@bot.event
+async def on_ready():
+    print(f"✅ Bejelentkezve: {bot.user} ({bot.user.id})")
 
-    if os.path.exists("commands_rank.txt"):
-        with open("commands_rank.txt", "r") as f:
-            ranks = [line.strip() for line in f if line.strip()]
-        if not ranks:
-            return ctx.author.guild_permissions.administrator
-        user_roles = [role.name for role in ctx.author.roles]
-        return any(role in user_roles for role in ranks)
-
-    return False
-
-def load_reactions():
-    if not os.path.exists("reaction_roles.json"):
-        return {}
-    with open("reaction_roles.json", "r", encoding="utf-8") as f:
-        return json.load(f)
-
-def save_reactions(data):
-    with open("reaction_roles.json", "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
-
-# === PARANCSOK ===
+# --- Parancsok ---
 
 @bot.command()
-async def dbactivate(ctx):
-    await ctx.send("✅ A bot aktív és fut!")
+@commands.has_permissions(administrator=True)
+async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
+    gid = ctx.guild.id
+    reaction_roles.setdefault(gid, {}).setdefault(message_id, {})[emoji] = role_name
+    save_reaction_roles()
 
-@bot.command()
-async def addreaction(ctx, message_id: int, emoji: str, role: discord.Role):
-    if not is_server_allowed(ctx.guild.id) or not is_user_allowed(ctx):
-        return
-
-    data = load_reactions()
-    msg_id = str(message_id)
-    if msg_id not in data:
-        data[msg_id] = {}
-    data[msg_id][emoji] = role.id
-    save_reactions(data)
-    await ctx.send(f"✅ Hozzáadva: {emoji} → {role.name}")
-
-@bot.command()
-async def removereaction(ctx, message_id: int, emoji: str):
-    if not is_server_allowed(ctx.guild.id) or not is_user_allowed(ctx):
-        return
-
-    data = load_reactions()
-    msg_id = str(message_id)
-    if msg_id in data and emoji in data[msg_id]:
-        del data[msg_id][emoji]
-        if not data[msg_id]:
-            del data[msg_id]
-        save_reactions(data)
-        await ctx.send(f"❌ Eltávolítva: {emoji}")
+    try:
+        msg = await ctx.channel.fetch_message(message_id)
+        await msg.add_reaction(emoji)
+    except Exception as e:
+        await ctx.send(f"✅ Hozzáadva, de nem sikerült reagálni: {e}")
     else:
-        await ctx.send("❗ Nem található az adott emoji a megadott üzenetnél.")
+        await ctx.send(f"🔧 `{emoji}` → `{role_name}` (ID: `{message_id}`)")
 
 @bot.command()
+@commands.has_permissions(administrator=True)
+async def removereaction(ctx, message_id: int, emoji: str):
+    gid = ctx.guild.id
+    if gid in reaction_roles and message_id in reaction_roles[gid] and emoji in reaction_roles[gid][message_id]:
+        del reaction_roles[gid][message_id][emoji]
+        if not reaction_roles[gid][message_id]: del reaction_roles[gid][message_id]
+        if not reaction_roles[gid]: del reaction_roles[gid]
+        save_reaction_roles()
+        await ctx.send(f"❌ `{emoji}` eltávolítva (ID: `{message_id}`)")
+    else:
+        await ctx.send("⚠️ Nem található az emoji vagy üzenet.")
+
+@bot.command()
+@commands.has_permissions(administrator=True)
 async def listreactions(ctx):
-    if not is_server_allowed(ctx.guild.id) or not is_user_allowed(ctx):
-        return
-
-    data = load_reactions()
+    data = reaction_roles.get(ctx.guild.id, {})
     if not data:
-        await ctx.send("📭 Nincsenek tárolt reakciók.")
-        return
-
-    msg = "**📋 Reakció lista:**
-"
-    for msg_id, emojis in data.items():
-        msg += f"
-Üzenet ID: `{msg_id}`
-"
-        for emoji, role_id in emojis.items():
-            role = ctx.guild.get_role(role_id)
-            role_name = role.name if role else "Ismeretlen szerepkör"
-            msg += f"  {emoji} → {role_name}
-"
+        return await ctx.send("ℹ️ Nincs beállított reakció ebben a szerverben.")
+    msg = "\n".join(
+        f"📩 Üzenet ID: `{mid}`\n" + "\n".join(f"   {e} → `{r}`" for e, r in em.items())
+        for mid, em in data.items()
+    )
     await ctx.send(msg)
 
 @bot.command()
 async def dbhelp(ctx):
-    help_text = (
-        "```
-"
-        "Parancsok:
-"
-        "!dbactivate – Ellenőrzi, hogy fut-e a bot
-"
-        "!addreaction <üzenet_id> <emoji> <@szerepkör> – Reakció hozzárendelés
-"
-        "!removereaction <üzenet_id> <emoji> – Reakció törlése
-"
-        "!listreactions – Összes hozzárendelt reakció megtekintése
-"
-        "!dbhelp – Ez a súgó
-"
-        "```"
-    )
-    await ctx.send(help_text)
+    await ctx.send("""```
+📌 Elérhető parancsok:
+!addreaction <üzenet_id> <emoji> <szerepkör>   - Reakció hozzáadása
+!removereaction <üzenet_id> <emoji>           - Reakció eltávolítása
+!listreactions                                - Reakciók listázása
+!dbactivate                                   - Aktivációs infó megtekintése
+!dbhelp                                       - Ez a súgó
+```""")
 
-# === REAKCIÓ FIGYELÉS ===
+@bot.command()
+async def dbactivate(ctx):
+    if not os.path.exists(ACTIVATE_INFO_FILE):
+        return await ctx.send("⚠️ Az activateinfo.txt fájl nem található.")
+    with open(ACTIVATE_INFO_FILE, "r", encoding="utf-8") as f:
+        content = f.read().strip()
+    await ctx.send(content or "⚠️ Az activateinfo.txt fájl üres.")
+
+# --- Reakció események ---
+
+async def handle_reaction(payload, add=True):
+    if payload.user_id == bot.user.id or payload.guild_id not in allowed_guilds:
+        return
+    guild = bot.get_guild(payload.guild_id)
+    member = guild.get_member(payload.user_id) if guild else None
+    emoji = str(payload.emoji)
+    role_name = reaction_roles.get(payload.guild_id, {}).get(payload.message_id, {}).get(emoji)
+    role = discord.utils.get(guild.roles, name=role_name) if guild else None
+    if member and role:
+        await (member.add_roles(role) if add else member.remove_roles(role))
+        print(f"{'✅' if add else '❌'} {member} {'kapta meg' if add else 'elvesztette'}: {role.name}")
 
 @bot.event
 async def on_raw_reaction_add(payload):
-    if payload.member.bot:
-        return
-
-    if not is_server_allowed(payload.guild_id):
-        return
-
-    data = load_reactions()
-    msg_id = str(payload.message_id)
-    emoji = str(payload.emoji)
-    if msg_id in data and emoji in data[msg_id]:
-        guild = bot.get_guild(payload.guild_id)
-        role = guild.get_role(data[msg_id][emoji])
-        if role:
-            member = guild.get_member(payload.user_id)
-            if member:
-                await member.add_roles(role)
+    await handle_reaction(payload, add=True)
 
 @bot.event
 async def on_raw_reaction_remove(payload):
-    data = load_reactions()
-    msg_id = str(payload.message_id)
-    emoji = str(payload.emoji)
-    if msg_id in data and emoji in data[msg_id]:
-        guild = bot.get_guild(payload.guild_id)
-        role = guild.get_role(data[msg_id][emoji])
-        if role:
-            member = guild.get_member(payload.user_id)
-            if member:
-                await member.remove_roles(role)
+    await handle_reaction(payload, add=False)
 
-# === WEB SERVER RENDERHEZ ===
-
-app = web.Application()
+# --- Webserver ---
 
 async def handle_root(request):
-    return web.Response(text="Darky Bot v1.2.6 fut.")
+    return web.Response(text="✅ DarkyBot él!", content_type='text/html')
 
 async def handle_json(request):
-    data = load_reactions()
-    return web.json_response(data)
+    try:
+        with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        data = {}
+    return web.json_response(data, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=4))
 
+app = web.Application()
 app.router.add_get("/", handle_root)
 app.router.add_get("/reaction_roles.json", handle_json)
 
-async def run_bot():
+async def start_webserver():
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, port=8080)
-    await site.start()
-    await bot.start(os.environ["DISCORD_TOKEN"])
+    await web.TCPSite(runner, "0.0.0.0", 8080).start()
 
-import asyncio
-asyncio.run(run_bot())
+# --- Főfüggvény ---
+async def main():
+    print("✅ Bot indítása...")
+    await start_webserver()
+    if DISCORD_TOKEN:
+        await bot.start(DISCORD_TOKEN)
+    else:
+        print("❌ Nincs DISCORD_TOKEN beállítva!")
+
+if __name__ == "__main__":
+    asyncio.run(main())
