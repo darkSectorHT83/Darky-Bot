@@ -165,13 +165,13 @@ async def fnnew(ctx):
 
     await ctx.send(content)
 
-# ✅ JAVÍTOTT fncn parancs
+# ✅ JAVÍTOTT fncn parancs (shop végpontra)
 @bot.command()
 async def fncn(ctx):
     if ctx.guild and ctx.guild.id not in allowed_guilds:
         return
 
-    url = "https://fortnite-api.com/v2/cosmetics/new"
+    url = "https://fortnite-api.com/v2/shop"
 
     async with ClientSession() as session:
         async with session.get(url) as resp:
@@ -181,20 +181,28 @@ async def fncn(ctx):
 
             data = await resp.json()
 
-    items = data.get("data", {}).get("items", [])
-    if not items:
-        await ctx.send("ℹ️ Nem található új item.")
+    featured_items = data.get("data", {}).get("featured", {}).get("entries", [])
+    if not featured_items:
+        await ctx.send("ℹ️ Nem található kiemelt shop item.")
         return
 
     embed = discord.Embed(
         title="🛍️ Fortnite Shop új itemek beágyazva",
-        description="A legfrissebb új shop itemek:",
+        description="A legfrissebb kiemelt shop tartalmak:",
         color=discord.Color.blue()
     )
-    for item in items:
-        name = item.get("name", "Névtelen")
-        item_type = item.get("type", {}).get("value", "Ismeretlen")
-        embed.add_field(name=name, value=f"Típus: {item_type}", inline=True)
+
+    count = 0
+    for entry in featured_items:
+        for item in entry.get("items", []):
+            name = item.get("name", "Névtelen")
+            item_type = item.get("type", {}).get("value", "Ismeretlen")
+            embed.add_field(name=name, value=f"Típus: {item_type}", inline=True)
+            count += 1
+            if count >= 25:
+                break
+        if count >= 25:
+            break
 
     await ctx.send(embed=embed)
 
