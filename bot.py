@@ -2,11 +2,12 @@ import discord
 from discord.ext import commands
 import os
 import json
-from aiohttp import web
+from aiohttp import web, ClientSession
 import asyncio
 
 # Tokenek Render environment-ből
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+FORTNITE_API_KEY = os.getenv("FORTNITE_API_KEY")
 
 # Intents
 intents = discord.Intents.default()
@@ -26,9 +27,17 @@ ACTIVATE_INFO_FILE = "activateinfo.txt"
 # Engedélyezett szerverek betöltése
 def load_allowed_guilds():
     if not os.path.exists(ALLOWED_GUILDS_FILE):
+        print("⚠️ Reaction.ID.txt nem található, üres lista lesz.")
         return set()
     with open(ALLOWED_GUILDS_FILE, "r", encoding="utf-8") as f:
-        return set(int(line.strip()) for line in f if line.strip().isdigit())
+        guilds = set()
+        for line in f:
+            line = line.strip()
+            if line.isdigit():
+                guilds.add(int(line))
+            else:
+                print(f"⚠️ Rossz sor Reaction.ID.txt fájlban: {line}")
+        return guilds
 
 allowed_guilds = load_allowed_guilds()
 
@@ -59,11 +68,18 @@ def save_reaction_roles():
 async def guild_permission_check(ctx):
     if ctx.command.name == "dbactivate":
         return True
-    return ctx.guild and ctx.guild.id in allowed_guilds
+    if ctx.guild is None:
+        await ctx.send("⚠️ Ezt a parancsot csak szerveren lehet használni.")
+        return False
+    if ctx.guild.id not in allowed_guilds:
+        await ctx.send("⛔ Ez a szerver nincs engedélyezve a bot használatához.")
+        return False
+    return True
 
 @bot.event
 async def on_ready():
     print(f"✅ Bejelentkezett: {bot.user.name}")
+    print(f"✅ Engedélyezett szerverek: {allowed_guilds}")
 
 @bot.command()
 @commands.has_permissions(administrator=True)
@@ -120,7 +136,6 @@ async def listreactions(ctx):
             msg += f"   {emoji} → `{role}`\n"
     await ctx.send(msg)
 
-# !dbhelp parancs – összes parancs listázása blokkszövegben
 @bot.command()
 async def dbhelp(ctx):
     help_text = """```
@@ -129,11 +144,11 @@ async def dbhelp(ctx):
 !removereaction <üzenet_id> <emoji>           - Reakció eltávolítása
 !listreactions                                - Reakciók listázása
 !dbactivate                                   - Aktivációs infó megtekintése
+!shopnew                                      - Fortnite napi shop új elemei
 !dbhelp                                       - Ez a súgó
 ```"""
     await ctx.send(help_text)
 
-# !dbactivate – tartalom megjelenítése az activateinfo.txt-ből
 @bot.command()
 async def dbactivate(ctx):
     if not os.path.exists(ACTIVATE_INFO_FILE):
@@ -149,7 +164,49 @@ async def dbactivate(ctx):
 
     await ctx.send(content)
 
-# Reakciókezelés
+@bot.command()
+async def shopnew(ctx):
+    if not FORTNITE_API_KEY:
+        await ctx.send("⚠️ A Fortnite API kulcs nincs beállítva.")
+        return
+
+    url = "https://fortniteapi.io/v2/shop?new=true"
+    headers = {"Authorization": FORTNITE_API_KEY}
+
+    async with ClientSession() as session:
+        async with session.get(url, headers=headers) as response:
+            if response.status != 200:
+                await ctx.send(f"⚠️ API hiba: {response.status}")
+                return
+            data = await response.json()
+
+    items = data.get("shop", [])
+    if not items:
+        await ctx.send("ℹ️ Nincs új elem az Item Shopban.")
+        return
+
+    embed = discord.Embed(
+        title="🛒 Fortnite Item Shop – Új elemek",
+        color=discord.Color.blue()
+    )
+
+    for item in items[:10]:
+        name = item.get("name", "Ismeretlen")
+        price = item.get("price", "Ismeretlen ár")
+        icon = item.get("images", {}).get("icon", "")
+        embed.add_field(name=name, value=f"{price} V-Bucks", inline=True)
+        if icon:
+            embed.set_thumbnail(url=icon)
+
+    await ctx.send(embed=embed)
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def reloadguilds(ctx):
+    global allowed_guilds
+    allowed_guilds = load_allowed_guilds()
+    await ctx.send("🔄 Engedélyezett szerverek újratöltve.")
+
 @bot.event
 async def on_raw_reaction_add(payload):
     if payload.user_id == bot.user.id:
@@ -196,19 +253,17 @@ async def on_raw_reaction_remove(payload):
 async def handle(request):
     return web.Response(text="✅ DarkyBot él!", content_type='text/html')
 
-# JSON megtekintő – nyersen, szépen formázva
 async def get_json(request):
     if not os.path.exists(REACTION_ROLES_FILE):
-        return web.json_response({}, status=200, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=4))
+        return web.json_response({}, status=200)
 
     with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
         try:
             data = json.load(f)
         except json.JSONDecodeError:
             data = {}
-    return web.json_response(data, status=200, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=4))
+    return web.json_response(data, status=200)
 
-# Webserver setup
 app = web.Application()
 app.router.add_get("/", handle)
 app.router.add_get("/reaction_roles.json", get_json)
@@ -219,13 +274,10 @@ async def start_webserver():
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
 
-# Indítás
 async def main():
     print("✅ Bot indítás folyamatban...")
     print("DISCORD_TOKEN:", "✅ beállítva" if DISCORD_TOKEN else "❌ HIÁNYZIK")
-
     await start_webserver()
-
     try:
         await bot.start(DISCORD_TOKEN)
     except Exception as e:
