@@ -1,0 +1,1 @@
+#ide kell írni a rang neveket ha a commands.allow.txt = 1-es
