@@ -7,7 +7,6 @@ import asyncio
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
-# Intents
 intents = discord.Intents.default()
 intents.message_content = True
 intents.reactions = True
@@ -16,13 +15,11 @@ intents.members = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Fájlok
 ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
 REACTION_ROLES_FILE = "reaction_roles.json"
 ACTIVATE_INFO_FILE = "activateinfo.txt"
 FNNEW_FILE = "fnnew.txt"
 
-# Engedélyezett szerverek betöltése
 def load_allowed_guilds():
     if not os.path.exists(ALLOWED_GUILDS_FILE):
         return set()
@@ -31,7 +28,6 @@ def load_allowed_guilds():
 
 allowed_guilds = load_allowed_guilds()
 
-# Reaction roles betöltése
 if os.path.exists(REACTION_ROLES_FILE):
     with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
         try:
@@ -52,7 +48,6 @@ def save_reaction_roles():
             for gid, msgs in reaction_roles.items()
         }, f, ensure_ascii=False, indent=4)
 
-# Globális parancsellenőrzés (kivéve !dbactivate)
 @bot.check
 async def guild_permission_check(ctx):
     if ctx.command.name == "dbactivate":
@@ -165,13 +160,13 @@ async def fnnew(ctx):
 
     await ctx.send(content)
 
-# ✅ JAVÍTOTT fncn parancs (shop végpontra)
+# ✅ VÉGLEGESEN JAVÍTOTT !fncn PARANCS (Shop kiemelt itemekkel)
 @bot.command()
 async def fncn(ctx):
     if ctx.guild and ctx.guild.id not in allowed_guilds:
         return
 
-    url = "https://fortnite-api.com/v2/shop"
+    url = "https://fortnite-api.com/v2/shop/br"
 
     async with ClientSession() as session:
         async with session.get(url) as resp:
@@ -181,32 +176,26 @@ async def fncn(ctx):
 
             data = await resp.json()
 
-    featured_items = data.get("data", {}).get("featured", {}).get("entries", [])
-    if not featured_items:
+    shop_entries = data.get("data", {}).get("featured", {}).get("entries", [])
+    if not shop_entries:
         await ctx.send("ℹ️ Nem található kiemelt shop item.")
         return
 
     embed = discord.Embed(
         title="🛍️ Fortnite Shop új itemek beágyazva",
-        description="A legfrissebb kiemelt shop tartalmak:",
-        color=discord.Color.blue()
+        description="Kiemelt shop itemek listája:",
+        color=discord.Color.green()
     )
 
-    count = 0
-    for entry in featured_items:
-        for item in entry.get("items", []):
+    for entry in shop_entries[:10]:  # legfeljebb 10 item
+        items = entry.get("items", [])
+        for item in items:
             name = item.get("name", "Névtelen")
             item_type = item.get("type", {}).get("value", "Ismeretlen")
             embed.add_field(name=name, value=f"Típus: {item_type}", inline=True)
-            count += 1
-            if count >= 25:
-                break
-        if count >= 25:
-            break
 
     await ctx.send(embed=embed)
 
-# Reakciókezelés
 @bot.event
 async def on_raw_reaction_add(payload):
     if payload.user_id == bot.user.id:
@@ -249,7 +238,6 @@ async def on_raw_reaction_remove(payload):
             await member.remove_roles(role)
             print(f"❌ {member} elvesztette: {role.name}")
 
-# Webszerver
 async def handle(request):
     return web.Response(text="✅ DarkyBot él!", content_type='text/html')
 
