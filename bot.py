@@ -121,7 +121,6 @@ async def listreactions(ctx):
             msg += f"   {emoji} → `{role}`\n"
     await ctx.send(msg)
 
-# !dbhelp parancs
 @bot.command()
 async def dbhelp(ctx):
     help_text = """```
@@ -135,7 +134,6 @@ async def dbhelp(ctx):
 ```"""
     await ctx.send(help_text)
 
-# !dbactivate
 @bot.command()
 async def dbactivate(ctx):
     if not os.path.exists(ACTIVATE_INFO_FILE):
@@ -151,7 +149,7 @@ async def dbactivate(ctx):
 
     await ctx.send(content)
 
-# Fortnite shop parancs
+# Fortnite shop parancs (új, letisztult egy üzenetes verzió)
 @bot.command()
 async def shopnew(ctx):
     if not FORTNITE_API_KEY:
@@ -173,13 +171,21 @@ async def shopnew(ctx):
         await ctx.send("ℹ️ Nincs új elem az Item Shopban.")
         return
 
-    msg = "🛒 **Fortnite Item Shop – Új elemek:**\n"
-    for item in items:
+    embed = discord.Embed(
+        title="🛒 Fortnite Item Shop – Új elemek",
+        color=discord.Color.blue()
+    )
+    for item in items[:10]:
         name = item.get("name", "Ismeretlen")
         price = item.get("price", "Ismeretlen ár")
-        msg += f"- {name} ({price} V-Bucks)\n"
+        images = item.get("images", {})
+        icon = images.get("icon")
+        value = f"{price} V-Bucks"
+        embed.add_field(name=name, value=value, inline=True)
+        if icon:
+            embed.set_thumbnail(url=icon)
 
-    await ctx.send(msg)
+    await ctx.send(embed=embed)
 
 # Reakciókezelés
 @bot.event
