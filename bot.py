@@ -2,11 +2,12 @@ import discord
 from discord.ext import commands
 import os
 import json
-from aiohttp import web
+from aiohttp import web, ClientSession
 import asyncio
 
 # Tokenek Render environment-ből
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+FORTNITE_API_KEY = os.getenv("FORTNITE_API_KEY")
 
 # Intents
 intents = discord.Intents.default()
@@ -120,7 +121,7 @@ async def listreactions(ctx):
             msg += f"   {emoji} → `{role}`\n"
     await ctx.send(msg)
 
-# !dbhelp parancs – összes parancs listázása blokkszövegben
+# !dbhelp parancs
 @bot.command()
 async def dbhelp(ctx):
     help_text = """```
@@ -129,11 +130,12 @@ async def dbhelp(ctx):
 !removereaction <üzenet_id> <emoji>           - Reakció eltávolítása
 !listreactions                                - Reakciók listázása
 !dbactivate                                   - Aktivációs infó megtekintése
+!shopnew                                      - Fortnite napi shop új elemei
 !dbhelp                                       - Ez a súgó
 ```"""
     await ctx.send(help_text)
 
-# !dbactivate – tartalom megjelenítése az activateinfo.txt-ből
+# !dbactivate
 @bot.command()
 async def dbactivate(ctx):
     if not os.path.exists(ACTIVATE_INFO_FILE):
@@ -148,6 +150,36 @@ async def dbactivate(ctx):
         return
 
     await ctx.send(content)
+
+# Fortnite shop parancs
+@bot.command()
+async def shopnew(ctx):
+    if not FORTNITE_API_KEY:
+        await ctx.send("⚠️ A Fortnite API kulcs nincs beállítva.")
+        return
+
+    url = "https://fortniteapi.io/v2/shop?new=true"
+    headers = {"Authorization": FORTNITE_API_KEY}
+
+    async with ClientSession() as session:
+        async with session.get(url, headers=headers) as response:
+            if response.status != 200:
+                await ctx.send(f"⚠️ API hiba: {response.status}")
+                return
+            data = await response.json()
+
+    items = data.get("shop", [])
+    if not items:
+        await ctx.send("ℹ️ Nincs új elem az Item Shopban.")
+        return
+
+    msg = "🛒 **Fortnite Item Shop – Új elemek:**\n"
+    for item in items:
+        name = item.get("name", "Ismeretlen")
+        price = item.get("price", "Ismeretlen ár")
+        msg += f"- {name} ({price} V-Bucks)\n"
+
+    await ctx.send(msg)
 
 # Reakciókezelés
 @bot.event
@@ -196,7 +228,7 @@ async def on_raw_reaction_remove(payload):
 async def handle(request):
     return web.Response(text="✅ DarkyBot él!", content_type='text/html')
 
-# JSON megtekintő – nyersen, szépen formázva
+# JSON megtekintő
 async def get_json(request):
     if not os.path.exists(REACTION_ROLES_FILE):
         return web.json_response({}, status=200, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=4))
