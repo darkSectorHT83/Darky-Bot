@@ -9,6 +9,8 @@ import openai
 # Tokenek Render environment-ből
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+# OpenAI beállítás
 openai.api_key = OPENAI_API_KEY
 
 # Intents
@@ -57,18 +59,19 @@ def save_reaction_roles():
             for gid, msgs in reaction_roles.items()
         }, f, ensure_ascii=False, indent=4)
 
-# Globális parancsellenőrzés (kivéve !dbactivate és !g)
+# Globális parancsellenőrzés (kivéve !dbactivate)
 @bot.check
 async def guild_permission_check(ctx):
-    if ctx.command.name in ["dbactivate", "g"]:
+    if ctx.command.name == "dbactivate":
         return True
+    if ctx.command.name == "g":
+        return True  # !g parancs minden engedélyezett szerveren bárki használhatja
     return ctx.guild and ctx.guild.id in allowed_guilds
 
 @bot.event
 async def on_ready():
     print(f"✅ Bejelentkezett: {bot.user.name}")
 
-# ---------- Reaction Role parancsok ----------
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
@@ -124,7 +127,7 @@ async def listreactions(ctx):
             msg += f"   {emoji} → `{role}`\n"
     await ctx.send(msg)
 
-# ---------- Segítség parancs ----------
+# !dbhelp parancs – összes parancs listázása blokkszövegben
 @bot.command()
 async def dbhelp(ctx):
     help_text = """```
@@ -133,12 +136,12 @@ async def dbhelp(ctx):
 !removereaction <üzenet_id> <emoji>           - Reakció eltávolítása
 !listreactions                                - Reakciók listázása
 !dbactivate                                   - Aktivációs infó megtekintése
-!g <szöveg>                                   - ChatGPT-vel való beszélgetés
+!g <kérdés>                                   - ChatGPT-4 válasz
 !dbhelp                                       - Ez a súgó
 ```"""
     await ctx.send(help_text)
 
-# ---------- Aktiváció parancs ----------
+# !dbactivate – tartalom megjelenítése az activateinfo.txt-ből
 @bot.command()
 async def dbactivate(ctx):
     if not os.path.exists(ACTIVATE_INFO_FILE):
@@ -154,41 +157,37 @@ async def dbactivate(ctx):
 
     await ctx.send(content)
 
-# ---------- ChatGPT parancs ----------
+# Új !g parancs – ChatGPT-4 válasz
 @bot.command()
 async def g(ctx, *, prompt: str):
-    guild_id = ctx.guild.id if ctx.guild else None
-
-    # Csak engedélyezett szervereken működjön
-    if guild_id not in allowed_guilds:
-        await ctx.send("⚠️ Ez a parancs ezen a szerveren nem engedélyezett.")
-        return
-
-    # Ha a felhasználónak van "ChatGPTOFF" rangja → tiltás
-    if discord.utils.get(ctx.author.roles, name="ChatGPTOFF"):
-        await ctx.send("🚫 Nem használhatod ezt a parancsot, mert a 'ChatGPTOFF' szerepkörrel rendelkezel.")
+    if not ctx.guild or ctx.guild.id not in allowed_guilds:
+        await ctx.send("⚠️ Ez a parancs csak engedélyezett szerveren használható.")
         return
 
     await ctx.trigger_typing()
 
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=1000,
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=500,
             temperature=0.7
         )
 
         reply = response.choices[0].message["content"]
-
-        # Discord üzenet darabolás 2000 karakterre
-        for chunk in [reply[i:i+2000] for i in range(0, len(reply), 2000)]:
-            await ctx.send(chunk)
+        if len(reply) > 2000:
+            for chunk in [reply[i:i+2000] for i in range(0, len(reply), 2000)]:
+                await ctx.send(chunk)
+        else:
+            await ctx.send(reply)
 
     except Exception as e:
-        await ctx.send(f"⚠️ Hiba történt a ChatGPT hívás közben: {e}")
+        await ctx.send(f"❌ Hiba történt: {e}")
 
-# ---------- Reakció kezelés ----------
+# Reakciókezelés
 @bot.event
 async def on_raw_reaction_add(payload):
     if payload.user_id == bot.user.id:
@@ -231,10 +230,11 @@ async def on_raw_reaction_remove(payload):
             await member.remove_roles(role)
             print(f"❌ {member} elvesztette: {role.name}")
 
-# ---------- Webszerver ----------
+# Webszerver: gyökér
 async def handle(request):
     return web.Response(text="✅ DarkyBot él!", content_type='text/html')
 
+# JSON megtekintő – nyersen, szépen formázva
 async def get_json(request):
     if not os.path.exists(REACTION_ROLES_FILE):
         return web.json_response({}, status=200, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=4))
@@ -246,6 +246,7 @@ async def get_json(request):
             data = {}
     return web.json_response(data, status=200, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=4))
 
+# Webserver setup
 app = web.Application()
 app.router.add_get("/", handle)
 app.router.add_get("/reaction_roles.json", get_json)
@@ -256,7 +257,7 @@ async def start_webserver():
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
 
-# ---------- Indítás ----------
+# Indítás
 async def main():
     print("✅ Bot indítás folyamatban...")
     print("DISCORD_TOKEN:", "✅ beállítva" if DISCORD_TOKEN else "❌ HIÁNYZIK")
