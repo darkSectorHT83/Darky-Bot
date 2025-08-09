@@ -57,18 +57,105 @@ def save_reaction_roles():
             for gid, msgs in reaction_roles.items()
         }, f, ensure_ascii=False, indent=4)
 
-# Globális parancsellenőrzés (kivéve !dbactivate és AI parancsok)
+# Globális parancsellenőrzés (kivéve !dbactivate)
 @bot.check
 async def guild_permission_check(ctx):
-    if ctx.command.name in ["dbactivate", "GPT", "GPTPic", "G", "GPic"]:
-        return ctx.guild and ctx.guild.id in allowed_guilds
+    if ctx.command.name == "dbactivate":
+        return True
     return ctx.guild and ctx.guild.id in allowed_guilds
 
 @bot.event
 async def on_ready():
     print(f"✅ Bejelentkezett: {bot.user.name}")
 
-# Reaction role parancsok (csak admin)
+# ------------------------
+# AI PARANCSOK
+# ------------------------
+
+async def gemini_text(prompt):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
+    data = {"contents": [{"parts": [{"text": prompt}]}]}
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=data) as resp:
+            result = await resp.json()
+            try:
+                return result["candidates"][0]["content"]["parts"][0]["text"]
+            except:
+                return "⚠️ Gemini hiba történt."
+
+async def gemini_image(prompt):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
+    data = {"contents": [{"parts": [{"text": prompt}]}]}
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=data) as resp:
+            result = await resp.json()
+            try:
+                return result["candidates"][0]["content"]["parts"][0]["text"]
+            except:
+                return "⚠️ Gemini kép generálási hiba."
+
+async def gpt_text(prompt):
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {OPENAI_API_KEY}"}
+    data = {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": prompt}]}
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=data) as resp:
+            result = await resp.json()
+            try:
+                return result["choices"][0]["message"]["content"]
+            except:
+                return "⚠️ ChatGPT hiba történt."
+
+async def gpt_image(prompt):
+    url = "https://api.openai.com/v1/images/generations"
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {OPENAI_API_KEY}"}
+    data = {"model": "gpt-image-1", "prompt": prompt, "size": "1024x1024"}
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=data) as resp:
+            result = await resp.json()
+            try:
+                return result["data"][0]["url"]
+            except:
+                return "⚠️ ChatGPT kép generálási hiba."
+
+@bot.command()
+async def g(ctx, *, prompt: str):
+    if ctx.guild.id not in allowed_guilds:
+        return await ctx.send("❌ Ez a parancs csak engedélyezett szervereken érhető el.")
+    await ctx.send("⏳ Válasz készül...")
+    response = await gemini_text(prompt)
+    await ctx.send(response)
+
+@bot.command()
+async def gpic(ctx, *, prompt: str):
+    if ctx.guild.id not in allowed_guilds:
+        return await ctx.send("❌ Ez a parancs csak engedélyezett szervereken érhető el.")
+    await ctx.send("⏳ Kép készül...")
+    response = await gemini_image(prompt)
+    await ctx.send(response)
+
+@bot.command()
+async def gpt(ctx, *, prompt: str):
+    if ctx.guild.id not in allowed_guilds:
+        return await ctx.send("❌ Ez a parancs csak engedélyezett szervereken érhető el.")
+    await ctx.send("⏳ Válasz készül...")
+    response = await gpt_text(prompt)
+    await ctx.send(response)
+
+@bot.command()
+async def gptpic(ctx, *, prompt: str):
+    if ctx.guild.id not in allowed_guilds:
+        return await ctx.send("❌ Ez a parancs csak engedélyezett szervereken érhető el.")
+    await ctx.send("⏳ Kép készül...")
+    image_url = await gpt_image(prompt)
+    await ctx.send(image_url)
+
+# ------------------------
+# Reakciós és egyéb meglévő parancsok
+# ------------------------
+
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
@@ -124,134 +211,52 @@ async def listreactions(ctx):
             msg += f"   {emoji} → `{role}`\n"
     await ctx.send(msg)
 
-# AI függvények
-async def ask_gpt(prompt):
-    url = "https://api.openai.com/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
-    data = {
-        "model": "gpt-4o-mini",
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 500
-    }
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, headers=headers, json=data) as resp:
-            result = await resp.json()
-            return result["choices"][0]["message"]["content"].strip()
-
-async def generate_gpt_image(prompt):
-    url = "https://api.openai.com/v1/images/generations"
-    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
-    data = {"model": "gpt-image-1", "prompt": prompt, "size": "1024x1024"}
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, headers=headers, json=data) as resp:
-            result = await resp.json()
-            return result["data"][0]["url"]
-
-async def ask_gemini(prompt):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
-    headers = {"Content-Type": "application/json"}
-    data = {"contents": [{"parts": [{"text": prompt}]}]}
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, headers=headers, json=data) as resp:
-            result = await resp.json()
-            return result["candidates"][0]["content"]["parts"][0]["text"].strip()
-
-async def generate_gemini_image(prompt):
-    # Google Imagen API példaként – endpoint függően változhat
-    return f"https://dummyimage.com/1024x1024/000/fff.png&text={prompt.replace(' ', '+')}"
-
-# AI parancsok
-@bot.command(name="GPT")
-async def gpt_cmd(ctx, *, prompt: str):
-    await ctx.send("⏳ ChatGPT gondolkodik...")
-    try:
-        reply = await ask_gpt(prompt)
-        await ctx.send(reply)
-    except Exception as e:
-        await ctx.send(f"⚠️ Hiba: {e}")
-
-@bot.command(name="GPTPic")
-async def gptpic_cmd(ctx, *, prompt: str):
-    await ctx.send("⏳ ChatGPT képet készít...")
-    try:
-        url = await generate_gpt_image(prompt)
-        embed = discord.Embed(title="ChatGPT kép", description=prompt)
-        embed.set_image(url=url)
-        await ctx.send(embed=embed)
-    except Exception as e:
-        await ctx.send(f"⚠️ Hiba: {e}")
-
-@bot.command(name="G")
-async def g_cmd(ctx, *, prompt: str):
-    await ctx.send("⏳ Gemini gondolkodik...")
-    try:
-        reply = await ask_gemini(prompt)
-        await ctx.send(reply)
-    except Exception as e:
-        await ctx.send(f"⚠️ Hiba: {e}")
-
-@bot.command(name="GPic")
-async def gpic_cmd(ctx, *, prompt: str):
-    await ctx.send("⏳ Gemini képet készít...")
-    try:
-        url = await generate_gemini_image(prompt)
-        embed = discord.Embed(title="Gemini kép", description=prompt)
-        embed.set_image(url=url)
-        await ctx.send(embed=embed)
-    except Exception as e:
-        await ctx.send(f"⚠️ Hiba: {e}")
-
-# !dbhelp parancs – kategóriás lista
 @bot.command()
 async def dbhelp(ctx):
     help_text = """```
-📌 Parancslista:
-
-1. Lista:
-!dbhelp (Csak engedélyezett szerveren!)
-
-2. Aktiválás:
-!dbactivate (Csak engedélyezett szerveren!)
-
-3. Reaction Role:
-!addreaction (Csak engedélyezett szerveren! Csak Adminisztrátoroknak!)
-!removereaction (Csak engedélyezett szerveren! Csak Adminisztrátoroknak!)
-!listreactions (Csak engedélyezett szerveren! Csak Adminisztrátoroknak!)
-
-4. AI funkciók:
-!GPT (Csak engedélyezett szerveren!)
-!GPTPic (Csak engedélyezett szerveren!)
-!G (Csak engedélyezett szerveren!)
-!GPic (Csak engedélyezett szerveren!)
+📌 Elérhető parancsok:
+!addreaction <üzenet_id> <emoji> <szerepkör>   - Reakció hozzáadása
+!removereaction <üzenet_id> <emoji>           - Reakció eltávolítása
+!listreactions                                - Reakciók listázása
+!dbactivate                                   - Aktivációs infó megtekintése
+!dbhelp                                       - Ez a súgó
+!g <szöveg>                                   - Gemini AI szöveges válasz
+!gpic <szöveg>                                - Gemini AI kép generálás
+!gpt <szöveg>                                 - ChatGPT szöveges válasz
+!gptpic <szöveg>                              - ChatGPT kép generálás
 ```"""
     await ctx.send(help_text)
 
-# !dbactivate
 @bot.command()
 async def dbactivate(ctx):
     if not os.path.exists(ACTIVATE_INFO_FILE):
         await ctx.send("⚠️ Az activateinfo.txt fájl nem található.")
         return
+
     with open(ACTIVATE_INFO_FILE, "r", encoding="utf-8") as f:
         content = f.read()
+
     if not content.strip():
         await ctx.send("⚠️ Az activateinfo.txt fájl üres.")
         return
+
     await ctx.send(content)
 
-# Reakciókezelés
 @bot.event
 async def on_raw_reaction_add(payload):
     if payload.user_id == bot.user.id:
         return
     if payload.guild_id not in allowed_guilds:
         return
+
     guild = bot.get_guild(payload.guild_id)
     if not guild:
         return
+
     emoji = str(payload.emoji)
     roles = reaction_roles.get(payload.guild_id, {}).get(payload.message_id)
     role_name = roles.get(emoji) if roles else None
+
     if role_name:
         role = discord.utils.get(guild.roles, name=role_name)
         member = guild.get_member(payload.user_id)
@@ -263,12 +268,15 @@ async def on_raw_reaction_add(payload):
 async def on_raw_reaction_remove(payload):
     if payload.guild_id not in allowed_guilds:
         return
+
     guild = bot.get_guild(payload.guild_id)
     if not guild:
         return
+
     emoji = str(payload.emoji)
     roles = reaction_roles.get(payload.guild_id, {}).get(payload.message_id)
     role_name = roles.get(emoji) if roles else None
+
     if role_name:
         role = discord.utils.get(guild.roles, name=role_name)
         member = guild.get_member(payload.user_id)
@@ -276,13 +284,14 @@ async def on_raw_reaction_remove(payload):
             await member.remove_roles(role)
             print(f"❌ {member} elvesztette: {role.name}")
 
-# Webszerver
+# Webszerver: gyökér
 async def handle(request):
     return web.Response(text="✅ DarkyBot él!", content_type='text/html')
 
 async def get_json(request):
     if not os.path.exists(REACTION_ROLES_FILE):
         return web.json_response({}, status=200, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=4))
+
     with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
         try:
             data = json.load(f)
@@ -300,7 +309,6 @@ async def start_webserver():
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
 
-# Indítás
 async def main():
     print("✅ Bot indítás folyamatban...")
     print("DISCORD_TOKEN:", "✅ beállítva" if DISCORD_TOKEN else "❌ HIÁNYZIK")
