@@ -286,7 +286,42 @@ async def on_raw_reaction_remove(payload):
 
 # Webszerver: gyökér
 async def handle(request):
-    return web.Response(text="✅ DarkyBot él!", content_type='text/html')
+    html_content = """
+    <!DOCTYPE html>
+    <html lang="hu">
+    <head>
+        <meta charset="UTF-8">
+        <title>Darky Bot Status</title>
+        <style>
+            body {
+                background-color: rgba(0, 0, 0, 0);
+                margin: 0;
+                overflow: hidden;
+                color: white;
+                font-family: Arial, sans-serif;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+            }
+            img {
+                width: 128px;
+                height: 128px;
+                margin-right: 15px;
+            }
+            .status {
+                font-size: 28px;
+                font-weight: bold;
+            }
+        </style>
+    </head>
+    <body>
+        <img src="https://kephost.net/p/MjAzODQ3OQ.png" alt="Darky Bot Icon">
+        <span class="status">Darky Bot: ONLINE</span>
+    </body>
+    </html>
+    """
+    return web.Response(text=html_content, content_type='text/html')
 
 async def get_json(request):
     if not os.path.exists(REACTION_ROLES_FILE):
@@ -320,4 +355,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
