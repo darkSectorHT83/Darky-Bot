@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import os
 import json
 from aiohttp import web
@@ -10,6 +10,8 @@ import aiohttp
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+TWITCH_ACCESS_TOKEN = os.getenv("TWITCH_ACCESS_TOKEN")
+TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
 
 # Intents
 intents = discord.Intents.default()
@@ -25,6 +27,7 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
 REACTION_ROLES_FILE = "reaction_roles.json"
 ACTIVATE_INFO_FILE = "activateinfo.txt"
+TWITCH_CHANNELS_FILE = "twitch_channels.json"
 
 # Engedélyezett szerverek betöltése
 def load_allowed_guilds():
@@ -49,12 +52,32 @@ if os.path.exists(REACTION_ROLES_FILE):
 else:
     reaction_roles = {}
 
-# Mentés
 def save_reaction_roles():
     with open(REACTION_ROLES_FILE, "w", encoding="utf-8") as f:
         json.dump({
             str(gid): {str(mid): em for mid, em in msgs.items()}
             for gid, msgs in reaction_roles.items()
+        }, f, ensure_ascii=False, indent=4)
+
+# Twitch csatornák betöltése
+if os.path.exists(TWITCH_CHANNELS_FILE):
+    with open(TWITCH_CHANNELS_FILE, "r", encoding="utf-8") as f:
+        try:
+            twitch_channels = json.load(f)
+            twitch_channels = {
+                int(gid): {int(cid): chans for cid, chans in chans_map.items()}
+                for gid, chans_map in twitch_channels.items()
+            }
+        except json.JSONDecodeError:
+            twitch_channels = {}
+else:
+    twitch_channels = {}
+
+def save_twitch_channels():
+    with open(TWITCH_CHANNELS_FILE, "w", encoding="utf-8") as f:
+        json.dump({
+            str(gid): {str(cid): chans for cid, chans in chans_map.items()}
+            for gid, chans_map in twitch_channels.items()
         }, f, ensure_ascii=False, indent=4)
 
 # Globális parancsellenőrzés (kivéve !dbactivate)
@@ -67,6 +90,7 @@ async def guild_permission_check(ctx):
 @bot.event
 async def on_ready():
     print(f"✅ Bejelentkezett: {bot.user.name}")
+    twitch_checker.start()
 
 # ------------------------
 # AI PARANCSOK
@@ -153,7 +177,7 @@ async def gptpic(ctx, *, prompt: str):
     await ctx.send(image_url)
 
 # ------------------------
-# Reakciós és egyéb meglévő parancsok
+# Reakciós parancsok
 # ------------------------
 
 @bot.command()
@@ -211,6 +235,69 @@ async def listreactions(ctx):
             msg += f"   {emoji} → `{role}`\n"
     await ctx.send(msg)
 
+# ------------------------
+# Twitch parancsok
+# ------------------------
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def addtwitch(ctx, streamer_name: str):
+    guild_id = ctx.guild.id
+    channel_id = ctx.channel.id
+
+    if guild_id not in twitch_channels:
+        twitch_channels[guild_id] = {}
+    if channel_id not in twitch_channels[guild_id]:
+        twitch_channels[guild_id][channel_id] = []
+
+    if streamer_name.lower() not in [s.lower() for s in twitch_channels[guild_id][channel_id]]:
+        twitch_channels[guild_id][channel_id].append(streamer_name)
+        save_twitch_channels()
+        await ctx.send(f"✅ Twitch csatorna hozzáadva: `{streamer_name}` ehhez a szobához.")
+    else:
+        await ctx.send("⚠️ Ez a streamer már hozzá van adva ehhez a szobához.")
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def removetwitch(ctx, streamer_name: str):
+    guild_id = ctx.guild.id
+    channel_id = ctx.channel.id
+
+    if (
+        guild_id in twitch_channels and
+        channel_id in twitch_channels[guild_id] and
+        streamer_name in twitch_channels[guild_id][channel_id]
+    ):
+        twitch_channels[guild_id][channel_id].remove(streamer_name)
+        if not twitch_channels[guild_id][channel_id]:
+            del twitch_channels[guild_id][channel_id]
+        if not twitch_channels[guild_id]:
+            del twitch_channels[guild_id]
+        save_twitch_channels()
+        await ctx.send(f"❌ Twitch csatorna eltávolítva: `{streamer_name}`")
+    else:
+        await ctx.send("⚠️ Nem található ez a streamer ebben a szobában.")
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def listtwitch(ctx):
+    guild_id = ctx.guild.id
+    if guild_id not in twitch_channels or not twitch_channels[guild_id]:
+        await ctx.send("ℹ️ Nincs Twitch csatorna beállítva ebben a szerverben.")
+        return
+
+    msg = ""
+    for cid, streamers in twitch_channels[guild_id].items():
+        channel_mention = bot.get_channel(cid).mention if bot.get_channel(cid) else f"`{cid}`"
+        msg += f"📺 Szoba: {channel_mention}\n"
+        for s in streamers:
+            msg += f"   - `{s}`\n"
+    await ctx.send(msg)
+
+# ------------------------
+# Súgó
+# ------------------------
+
 @bot.command()
 async def dbhelp(ctx):
     help_text = """```
@@ -218,14 +305,50 @@ async def dbhelp(ctx):
 !addreaction <üzenet_id> <emoji> <szerepkör>   - Reakció hozzáadása
 !removereaction <üzenet_id> <emoji>           - Reakció eltávolítása
 !listreactions                                - Reakciók listázása
+!addtwitch <streamer>                         - Twitch csatorna hozzáadása
+!removetwitch <streamer>                      - Twitch csatorna eltávolítása
+!listtwitch                                   - Twitch csatornák listázása
 !dbactivate                                   - Aktivációs infó megtekintése
 !dbhelp                                       - Ez a súgó
-!g <szöveg>                                   - Error
-!gpic <szöveg>                                - Error
+!g <szöveg>                                   - Gemini szöveg
+!gpic <szöveg>                                - Gemini kép
 !gpt <szöveg>                                 - ChatGPT szöveges válasz
-!gptpic <szöveg>                              - Error
+!gptpic <szöveg>                              - ChatGPT kép
 ```"""
     await ctx.send(help_text)
+
+# ------------------------
+# Twitch figyelő
+# ------------------------
+
+last_live_status = {}
+
+@tasks.loop(seconds=60)
+async def twitch_checker():
+    if not twitch_channels:
+        return
+    headers = {
+        "Client-ID": TWITCH_CLIENT_ID,
+        "Authorization": f"Bearer {TWITCH_ACCESS_TOKEN}"
+    }
+    async with aiohttp.ClientSession() as session:
+        for guild_id, chans_map in twitch_channels.items():
+            for channel_id, streamers in chans_map.items():
+                for streamer in streamers:
+                    url = f"https://api.twitch.tv/helix/streams?user_login={streamer}"
+                    async with session.get(url, headers=headers) as resp:
+                        data = await resp.json()
+                        is_live = bool(data.get("data"))
+                        key = f"{guild_id}-{channel_id}-{streamer.lower()}"
+                        if is_live and not last_live_status.get(key):
+                            chan = bot.get_channel(channel_id)
+                            if chan:
+                                await chan.send(f"🔴 **{streamer}** most élőben van a Twitch-en!\nhttps://twitch.tv/{streamer}")
+                        last_live_status[key] = is_live
+
+# ------------------------
+# Activate info
+# ------------------------
 
 @bot.command()
 async def dbactivate(ctx):
@@ -241,6 +364,10 @@ async def dbactivate(ctx):
         return
 
     await ctx.send(content)
+
+# ------------------------
+# Reaction események
+# ------------------------
 
 @bot.event
 async def on_raw_reaction_add(payload):
@@ -284,50 +411,12 @@ async def on_raw_reaction_remove(payload):
             await member.remove_roles(role)
             print(f"❌ {member} elvesztette: {role.name}")
 
-# Áttetszőség beállítása (0-100 között)
-OPACITY_PERCENT = 80  # Itt változtathatod meg az áttetszőség értékét (pl. 0-100)
+# ------------------------
+# Webszerver
+# ------------------------
 
-# Webszerver: gyökér
 async def handle(request):
-    opacity = OPACITY_PERCENT / 100  # 0-1 közötti érték CSS-hez
-    html_content = f"""
-    <!DOCTYPE html>
-    <html lang="hu">
-    <head>
-        <meta charset="UTF-8">
-        <title>Darky Bot Status</title>
-        <style>
-            body {{
-                background-color: rgba(0, 0, 0, 0);
-                margin: 0;
-                overflow: hidden;
-                color: white;
-                font-family: Arial, sans-serif;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                height: 100vh;
-            }}
-            img {{
-                width: 128px;
-                height: 128px;
-                margin-right: 15px;
-                opacity: {opacity};
-            }}
-            .status {{
-                font-size: 80px;
-                font-weight: bold;
-                opacity: {opacity};
-            }}
-        </style>
-    </head>
-    <body>
-        <img src="https://kephost.net/p/MjAzODQ3OQ.png" alt="Darky Bot Icon">
-        <span class="status">Darky Bot: ONLINE</span>
-    </body>
-    </html>
-    """
-    return web.Response(text=html_content, content_type='text/html')
+    return web.Response(text="✅ DarkyBot él!", content_type='text/html')
 
 async def get_json(request):
     if not os.path.exists(REACTION_ROLES_FILE):
@@ -350,14 +439,14 @@ async def start_webserver():
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
 
+# ------------------------
+# Main
+# ------------------------
+
 async def main():
     print("✅ Bot indítás folyamatban...")
     print("DISCORD_TOKEN:", "✅ beállítva" if DISCORD_TOKEN else "❌ HIÁNYZIK")
     await start_webserver()
     try:
         await bot.start(DISCORD_TOKEN)
-    except Exception as e:
-        print(f"❌ Hiba a bot indításakor: {e}")
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    except Exception
