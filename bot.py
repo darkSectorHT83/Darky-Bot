@@ -4,14 +4,12 @@ import os
 import json
 from aiohttp import web
 import asyncio
-import openai  # <-- ÚJ
+import aiohttp
 
 # Tokenek Render environment-ből
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # <-- ÚJ
-
-# OpenAI beállítás
-openai.api_key = OPENAI_API_KEY  # <-- ÚJ
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # Intents
 intents = discord.Intents.default()
@@ -70,8 +68,7 @@ async def guild_permission_check(ctx):
 async def on_ready():
     print(f"✅ Bejelentkezett: {bot.user.name}")
 
-# ------------------- PARANCSOK -------------------
-
+# Reaction role parancsok (csak admin)
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
@@ -127,72 +124,133 @@ async def listreactions(ctx):
             msg += f"   {emoji} → `{role}`\n"
     await ctx.send(msg)
 
-# !dbhelp parancs
+# AI függvények
+async def ask_gpt(prompt):
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+    data = {
+        "model": "gpt-4o-mini",
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 500
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=data) as resp:
+            result = await resp.json()
+            return result["choices"][0]["message"]["content"].strip()
+
+async def generate_gpt_image(prompt):
+    url = "https://api.openai.com/v1/images/generations"
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+    data = {"model": "gpt-image-1", "prompt": prompt, "size": "1024x1024"}
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=data) as resp:
+            result = await resp.json()
+            return result["data"][0]["url"]
+
+async def ask_gemini(prompt):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
+    data = {"contents": [{"parts": [{"text": prompt}]}]}
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=data) as resp:
+            result = await resp.json()
+            return result["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+async def generate_gemini_image(prompt):
+    return f"https://dummyimage.com/1024x1024/000/fff.png&text={prompt.replace(' ', '+')}"
+
+# AI parancsok (csak engedélyezett szerveren)
+@bot.command(name="GPT")
+async def gpt_cmd(ctx, *, prompt: str):
+    if ctx.guild.id not in allowed_guilds:
+        return
+    await ctx.send("⏳ ChatGPT gondolkodik...")
+    try:
+        reply = await ask_gpt(prompt)
+        await ctx.send(reply)
+    except Exception as e:
+        await ctx.send(f"⚠️ Hiba: {e}")
+
+@bot.command(name="GPTPic")
+async def gptpic_cmd(ctx, *, prompt: str):
+    if ctx.guild.id not in allowed_guilds:
+        return
+    await ctx.send("⏳ ChatGPT képet készít...")
+    try:
+        url = await generate_gpt_image(prompt)
+        embed = discord.Embed(title="ChatGPT kép", description=prompt)
+        embed.set_image(url=url)
+        await ctx.send(embed=embed)
+    except Exception as e:
+        await ctx.send(f"⚠️ Hiba: {e}")
+
+@bot.command(name="G")
+async def g_cmd(ctx, *, prompt: str):
+    if ctx.guild.id not in allowed_guilds:
+        return
+    await ctx.send("⏳ Gemini gondolkodik...")
+    try:
+        reply = await ask_gemini(prompt)
+        await ctx.send(reply)
+    except Exception as e:
+        await ctx.send(f"⚠️ Hiba: {e}")
+
+@bot.command(name="GPic")
+async def gpic_cmd(ctx, *, prompt: str):
+    if ctx.guild.id not in allowed_guilds:
+        return
+    await ctx.send("⏳ Gemini képet készít...")
+    try:
+        url = await generate_gemini_image(prompt)
+        embed = discord.Embed(title="Gemini kép", description=prompt)
+        embed.set_image(url=url)
+        await ctx.send(embed=embed)
+    except Exception as e:
+        await ctx.send(f"⚠️ Hiba: {e}")
+
+# !dbhelp parancs – egyszerű lista, bővítve AI parancsokkal
 @bot.command()
 async def dbhelp(ctx):
     help_text = """```
 📌 Elérhető parancsok:
-!addreaction <üzenet_id> <emoji> <szerepkör>   - Reakció hozzáadása
-!removereaction <üzenet_id> <emoji>           - Reakció eltávolítása
-!listreactions                                - Reakciók listázása
-!g <szöveg>                                   - ChatGPT-4 válasz
-!dbactivate                                   - Aktivációs infó megtekintése
-!dbhelp                                       - Ez a súgó
+!addreaction <üzenet_id> <emoji> <szerepkör>
+!removereaction <üzenet_id> <emoji>
+!listreactions
+!dbactivate
+!dbhelp
+!GPT <szöveg>
+!GPTPic <szöveg>
+!G <szöveg>
+!GPic <szöveg>
 ```"""
     await ctx.send(help_text)
 
-# !dbactivate
+# !dbactivate – minden szerveren engedélyezett
 @bot.command()
 async def dbactivate(ctx):
     if not os.path.exists(ACTIVATE_INFO_FILE):
         await ctx.send("⚠️ Az activateinfo.txt fájl nem található.")
         return
-
     with open(ACTIVATE_INFO_FILE, "r", encoding="utf-8") as f:
         content = f.read()
-
     if not content.strip():
         await ctx.send("⚠️ Az activateinfo.txt fájl üres.")
         return
-
     await ctx.send(content)
 
-# !g – ChatGPT kérdés
-@bot.command()
-async def g(ctx, *, prompt: str):
-    try:
-        # GPT-4 kérés
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "Te egy segítőkész asszisztens vagy Discordon."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=500,
-            temperature=0.7
-        )
-        answer = response.choices[0].message["content"]
-        await ctx.send(answer)
-    except Exception as e:
-        await ctx.send(f"⚠️ Hiba történt: {e}")
-
-# ------------------- REAKCIÓ KEZELÉS -------------------
-
+# Reakciókezelés
 @bot.event
 async def on_raw_reaction_add(payload):
     if payload.user_id == bot.user.id:
         return
     if payload.guild_id not in allowed_guilds:
         return
-
     guild = bot.get_guild(payload.guild_id)
     if not guild:
         return
-
     emoji = str(payload.emoji)
     roles = reaction_roles.get(payload.guild_id, {}).get(payload.message_id)
     role_name = roles.get(emoji) if roles else None
-
     if role_name:
         role = discord.utils.get(guild.roles, name=role_name)
         member = guild.get_member(payload.user_id)
@@ -204,15 +262,12 @@ async def on_raw_reaction_add(payload):
 async def on_raw_reaction_remove(payload):
     if payload.guild_id not in allowed_guilds:
         return
-
     guild = bot.get_guild(payload.guild_id)
     if not guild:
         return
-
     emoji = str(payload.emoji)
     roles = reaction_roles.get(payload.guild_id, {}).get(payload.message_id)
     role_name = roles.get(emoji) if roles else None
-
     if role_name:
         role = discord.utils.get(guild.roles, name=role_name)
         member = guild.get_member(payload.user_id)
@@ -220,15 +275,13 @@ async def on_raw_reaction_remove(payload):
             await member.remove_roles(role)
             print(f"❌ {member} elvesztette: {role.name}")
 
-# ------------------- WEBSERVER -------------------
-
+# Webszerver
 async def handle(request):
     return web.Response(text="✅ DarkyBot él!", content_type='text/html')
 
 async def get_json(request):
     if not os.path.exists(REACTION_ROLES_FILE):
         return web.json_response({}, status=200, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=4))
-
     with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
         try:
             data = json.load(f)
@@ -246,15 +299,11 @@ async def start_webserver():
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
 
-# ------------------- INDÍTÁS -------------------
-
+# Indítás
 async def main():
     print("✅ Bot indítás folyamatban...")
     print("DISCORD_TOKEN:", "✅ beállítva" if DISCORD_TOKEN else "❌ HIÁNYZIK")
-    print("OPENAI_API_KEY:", "✅ beállítva" if OPENAI_API_KEY else "❌ HIÁNYZIK")
-
     await start_webserver()
-
     try:
         await bot.start(DISCORD_TOKEN)
     except Exception as e:
