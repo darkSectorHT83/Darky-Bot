@@ -5,6 +5,7 @@ import json
 from aiohttp import web
 import asyncio
 import openai
+from functools import partial
 
 # Tokenek Render environment-ből
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -33,19 +34,34 @@ def load_allowed_guilds():
     if not os.path.exists(ALLOWED_GUILDS_FILE):
         return set()
     with open(ALLOWED_GUILDS_FILE, "r", encoding="utf-8") as f:
-        return set(int(line.strip()) for line in f if line.strip().isdigit())
+        ids = set()
+        for line in f:
+            s = line.strip()
+            if s.isdigit():
+                ids.add(int(s))
+        return ids
 
 allowed_guilds = load_allowed_guilds()
 
-# Reaction roles betöltése
+# Reaction roles betöltése (robosztusabb)
 if os.path.exists(REACTION_ROLES_FILE):
     with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
         try:
-            reaction_roles = json.load(f)
-            reaction_roles = {
-                int(gid): {int(mid): em for mid, em in msgs.items()}
-                for gid, msgs in reaction_roles.items()
-            }
+            raw = json.load(f)
+            reaction_roles = {}
+            for gid_s, msgs in raw.items():
+                try:
+                    gid = int(gid_s)
+                except:
+                    continue
+                reaction_roles[gid] = {}
+                if isinstance(msgs, dict):
+                    for mid_s, emoji_map in msgs.items():
+                        try:
+                            mid = int(mid_s)
+                        except:
+                            continue
+                        reaction_roles[gid][mid] = emoji_map
         except json.JSONDecodeError:
             reaction_roles = {}
 else:
@@ -62,11 +78,14 @@ def save_reaction_roles():
 # Globális parancsellenőrzés (kivéve !dbactivate)
 @bot.check
 async def guild_permission_check(ctx):
+    # Ha nincs parancs objektum (ritka), engedjük
+    if ctx.command is None:
+        return True
+    # dbactivate mindenhol fusson
     if ctx.command.name == "dbactivate":
         return True
-    if ctx.command.name == "g":
-        return True  # !g parancs minden engedélyezett szerveren bárki használhatja
-    return ctx.guild and ctx.guild.id in allowed_guilds
+    # minden más parancs csak engedélyezett szervereken fusson
+    return ctx.guild is not None and ctx.guild.id in allowed_guilds
 
 @bot.event
 async def on_ready():
@@ -132,11 +151,11 @@ async def listreactions(ctx):
 async def dbhelp(ctx):
     help_text = """```
 📌 Elérhető parancsok:
-!addreaction <üzenet_id> <emoji> <szerepkör>   - Reakció hozzáadása
-!removereaction <üzenet_id> <emoji>           - Reakció eltávolítása
-!listreactions                                - Reakciók listázása
+!addreaction <üzenet_id> <emoji> <szerepkör>   - Reakció hozzáadása (admin)
+!removereaction <üzenet_id> <emoji>           - Reakció eltávolítása (admin)
+!listreactions                                - Reakciók listázása (admin)
 !dbactivate                                   - Aktivációs infó megtekintése
-!g <kérdés>                                   - ChatGPT-4 válasz
+!g <kérdés>                                   - ChatGPT-4 válasz (mindenkinek engedélyezett szerveren)
 !dbhelp                                       - Ez a súgó
 ```"""
     await ctx.send(help_text)
@@ -157,35 +176,60 @@ async def dbactivate(ctx):
 
     await ctx.send(content)
 
-# Új !g parancs – ChatGPT-4 válasz
+# Új !g parancs – ChatGPT-4 válasz (mindenkinek az engedélyezett szervereken)
 @bot.command()
 async def g(ctx, *, prompt: str):
+    # Kizárólag engedélyezett szervereken működjön
     if not ctx.guild or ctx.guild.id not in allowed_guilds:
-        await ctx.send("⚠️ Ez a parancs csak engedélyezett szerveren használható.")
+        await ctx.send("⚠️ Ez a parancs csak engedélyezett szervereken használható.")
+        return
+
+    if not OPENAI_API_KEY:
+        await ctx.send("❌ Az OPENAI_API_KEY nincs beállítva a környezetben.")
         return
 
     await ctx.trigger_typing()
 
-    try:
-        response = openai.ChatCompletion.create(
+    def call_openai():
+        return openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=500,
+            max_tokens=1000,
             temperature=0.7
         )
 
-        reply = response.choices[0].message["content"]
-        if len(reply) > 2000:
-            for chunk in [reply[i:i+2000] for i in range(0, len(reply), 2000)]:
-                await ctx.send(chunk)
+    try:
+        # Ne blokkoljuk az eseményhurokot: futtatjuk executorban
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, call_openai)
+
+        # Robustabb kinyerés, különböző openai-pakk verziókhoz
+        reply = ""
+        if response and getattr(response, "choices", None):
+            choice = response.choices[0]
+            if isinstance(choice, dict):
+                reply = choice.get("message", {}).get("content") or choice.get("text") or ""
+            else:
+                try:
+                    reply = choice.message["content"]
+                except Exception:
+                    reply = getattr(choice, "text", "") or ""
         else:
-            await ctx.send(reply)
+            reply = ""
+
+        if not reply:
+            await ctx.send("⚠️ Nem érkezett érdemi válasz a ChatGPT-től.")
+            return
+
+        # Üzenetfelosztás 2000 char felett
+        for chunk in [reply[i:i+2000] for i in range(0, len(reply), 2000)]:
+            await ctx.send(chunk)
 
     except Exception as e:
-        await ctx.send(f"❌ Hiba történt: {e}")
+        await ctx.send(f"❌ Hiba történt a ChatGPT hívása közben: {e}")
 
 # Reakciókezelés
 @bot.event
