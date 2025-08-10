@@ -284,16 +284,20 @@ async def on_raw_reaction_remove(payload):
             await member.remove_roles(role)
             print(f"❌ {member} elvesztette: {role.name}")
 
+# Áttetszőség beállítása (0-100 között)
+OPACITY_PERCENT = 80  # Itt változtathatod meg az áttetszőség értékét (pl. 0-100)
+
 # Webszerver: gyökér
 async def handle(request):
-    html_content = """
+    opacity = OPACITY_PERCENT / 100  # 0-1 közötti érték CSS-hez
+    html_content = f"""
     <!DOCTYPE html>
     <html lang="hu">
     <head>
         <meta charset="UTF-8">
         <title>Darky Bot Status</title>
         <style>
-            body {
+            body {{
                 background-color: rgba(0, 0, 0, 0);
                 margin: 0;
                 overflow: hidden;
@@ -303,16 +307,18 @@ async def handle(request):
                 align-items: center;
                 justify-content: center;
                 height: 100vh;
-            }
-            img {
+            }}
+            img {{
                 width: 128px;
                 height: 128px;
                 margin-right: 15px;
-            }
-            .status {
+                opacity: {opacity};
+            }}
+            .status {{
                 font-size: 80px;
                 font-weight: bold;
-            }
+                opacity: {opacity};
+            }}
         </style>
     </head>
     <body>
