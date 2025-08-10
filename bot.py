@@ -310,7 +310,7 @@ async def handle(request):
                 margin-right: 15px;
             }
             .status {
-                font-size: 28px;
+                font-size: 80px;
                 font-weight: bold;
             }
         </style>
