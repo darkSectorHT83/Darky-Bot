@@ -4,9 +4,15 @@ import os
 import json
 from aiohttp import web
 import asyncio
+import openai
+from functools import partial
 
 # Tokenek Render environment-ből
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+# OpenAI beállítás
+openai.api_key = OPENAI_API_KEY
 
 # Intents
 intents = discord.Intents.default()
@@ -64,6 +70,36 @@ async def guild_permission_check(ctx):
 @bot.event
 async def on_ready():
     print(f"✅ Bejelentkezett: {bot.user.name}")
+
+# ChatGPT parancs
+@bot.command()
+async def g(ctx, *, prompt: str):
+    """ChatGPT-vel beszélgetés"""
+    try:
+        await ctx.trigger_typing()
+
+        response = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: openai.ChatCompletion.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "Te egy barátságos Discord bot vagy, aki röviden és érthetően válaszol."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=500
+            )
+        )
+
+        reply = response.choices[0].message["content"]
+
+        if len(reply) > 2000:
+            for i in range(0, len(reply), 2000):
+                await ctx.send(reply[i:i+2000])
+        else:
+            await ctx.send(reply)
+
+    except Exception as e:
+        await ctx.send(f"⚠️ Hiba történt: {e}")
 
 # Reaction role parancsok
 @bot.command()
@@ -124,13 +160,18 @@ async def listreactions(ctx):
 # Segítség parancs
 @bot.command()
 async def dbhelp(ctx):
-    embed = discord.Embed(title="📌 Elérhető parancsok", color=0x2ecc71)
-    embed.add_field(name="!addreaction <üzenet_id> <emoji> <szerepkör>", value="Reakció hozzáadása", inline=False)
-    embed.add_field(name="!removereaction <üzenet_id> <emoji>", value="Reakció eltávolítása", inline=False)
-    embed.add_field(name="!listreactions", value="Reakciók listázása", inline=False)
-    embed.add_field(name="!dbactivate", value="Aktivációs információ megtekintése", inline=False)
-    embed.add_field(name="!dbhelp", value="Ez a súgó", inline=False)
-    await ctx.send(embed=embed)
+    help_text = """
+
+📌 Elérhető parancsok:
+!addreaction <üzenet_id> <emoji> <szerepkör>   - Reakció hozzáadása
+!removereaction <üzenet_id> <emoji>           - Reakció eltávolítása
+!listreactions                                - Reakciók listázása
+!dbactivate                                   - Aktivációs infó megtekintése
+!dbhelp                                       - Ez a súgó
+!g <kérdés>                                   - ChatGPT válaszol
+
+"""
+    await ctx.send(help_text)
 
 # Aktivációs infó parancs
 @bot.command()
