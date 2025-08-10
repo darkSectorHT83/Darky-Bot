@@ -220,10 +220,10 @@ async def dbhelp(ctx):
 !listreactions                                - Reakciók listázása
 !dbactivate                                   - Aktivációs infó megtekintése
 !dbhelp                                       - Ez a súgó
-!g <szöveg>                                   - Gemini AI szöveges válasz
-!gpic <szöveg>                                - Gemini AI kép generálás
+!g <szöveg>                                   - Error
+!gpic <szöveg>                                - Error
 !gpt <szöveg>                                 - ChatGPT szöveges válasz
-!gptpic <szöveg>                              - ChatGPT kép generálás
+!gptpic <szöveg>                              - Error
 ```"""
     await ctx.send(help_text)
 
@@ -320,3 +320,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
