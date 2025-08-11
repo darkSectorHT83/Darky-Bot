@@ -2,7 +2,7 @@
 !removereaction <üzenet_id> <emoji>           - Reakció eltávolítása
 !listreactions                                - Reakciók listázása
 !dbactivate                                   - Aktivációs infó megtekintése
-!g <szöveg>                                   - Gemini szöveg
-!gpic <szöveg>                                - Gemini kép
+!g <szöveg>                                   - Gemini szöveg (hibás)
+!gpic <szöveg>                                - Gemini kép (hibás)
 !gpt <szöveg>                                 - ChatGPT szöveg
-!gptpic <szöveg>                              - ChatGPT kép
+!gptpic <szöveg>                              - ChatGPT kép (hibás)
