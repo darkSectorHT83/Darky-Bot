@@ -25,7 +25,6 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
 REACTION_ROLES_FILE = "reaction_roles.json"
 ACTIVATE_INFO_FILE = "activateinfo.txt"
-HELP_FILE = "help.txt"  # új help fájl
 
 # Áttetszőség beállítás (0-100)
 TRANSPARENCY = 100  # 100 = 100% látható, 0 = teljesen átlátszó
@@ -61,10 +60,10 @@ def save_reaction_roles():
             for gid, msgs in reaction_roles.items()
         }, f, ensure_ascii=False, indent=4)
 
-# Globális parancsellenőrzés (kivéve !dbactivate és !help)
+# Globális parancsellenőrzés (kivéve !dbactivate)
 @bot.check
 async def guild_permission_check(ctx):
-    if ctx.command.name in ["dbactivate", "help"]:
+    if ctx.command.name == "dbactivate":
         return True
     return ctx.guild and ctx.guild.id in allowed_guilds
 
@@ -157,25 +156,6 @@ async def gptpic(ctx, *, prompt: str):
     await ctx.send(image_url)
 
 # ------------------------
-# HELP PARANCS
-# ------------------------
-
-@bot.command(name="help")
-async def help_command(ctx):
-    if not os.path.exists(HELP_FILE):
-        await ctx.send("⚠️ A help.txt fájl nem található.")
-        return
-
-    with open(HELP_FILE, "r", encoding="utf-8") as f:
-        content = f.read()
-
-    if not content.strip():
-        await ctx.send("⚠️ A help.txt fájl üres.")
-        return
-
-    await ctx.send(f"```{content}```")
-
-# ------------------------
 # Reakciós és egyéb meglévő parancsok
 # ------------------------
 
@@ -198,7 +178,7 @@ async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
     except Exception as e:
         await ctx.send(f"Hozzáadva, de nem sikerült reagálni: {e}")
     else:
-        await ctx.send(f"🔧 `{emoji}` → `{role_name}` (üzenet ID: `{message_id}`)")
+        await ctx.send(f"🔧 {emoji} → {role_name} (üzenet ID: {message_id})")
 
 @bot.command()
 @commands.has_permissions(administrator=True)
@@ -215,7 +195,7 @@ async def removereaction(ctx, message_id: int, emoji: str):
         if not reaction_roles[guild_id]:
             del reaction_roles[guild_id]
         save_reaction_roles()
-        await ctx.send(f"❌ `{emoji}` eltávolítva (üzenet: `{message_id}`)")
+        await ctx.send(f"❌ {emoji} eltávolítva (üzenet: {message_id})")
     else:
         await ctx.send("⚠️ Nem található az emoji vagy üzenet.")
 
@@ -229,10 +209,28 @@ async def listreactions(ctx):
 
     msg = ""
     for msg_id, emoji_map in reaction_roles[guild_id].items():
-        msg += f"📩 Üzenet ID: `{msg_id}`\n"
+        msg += f"📩 Üzenet ID: {msg_id}\n"
         for emoji, role in emoji_map.items():
-            msg += f"   {emoji} → `{role}`\n"
+            msg += f"   {emoji} → {role}\n"
     await ctx.send(msg)
+
+@bot.command()
+async def dbhelp(ctx):
+    help_text = """
+
+📌 Elérhető parancsok:
+!addreaction <üzenet_id> <emoji> <szerepkör>   - Reakció hozzáadása
+!removereaction <üzenet_id> <emoji>           - Reakció eltávolítása
+!listreactions                                - Reakciók listázása
+!dbactivate                                   - Aktivációs infó megtekintése
+!dbhelp                                       - Ez a súgó
+!g <szöveg>                                   - Error
+!gpic <szöveg>                                - Error
+!gpt <szöveg>                                 - ChatGPT szöveges válasz
+!gptpic <szöveg>                              - Error
+
+"""
+    await ctx.send(help_text)
 
 @bot.command()
 async def dbactivate(ctx):
