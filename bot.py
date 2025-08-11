@@ -16,20 +16,20 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
-TWITCH_ACCESS_TOKEN = os.getenv("TWITCH_ACCESS_TOKEN")  # OAuth token vagy app token (ami nálad van)
+TWITCH_ACCESS_TOKEN = os.getenv("TWITCH_ACCESS_TOKEN")
 
 # Fájlnevek
 ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
 REACTION_ROLES_FILE = "reaction_roles.json"
 ACTIVATE_INFO_FILE = "activateinfo.txt"
-TWITCH_FILE = "twitch_streams.json"  # <- ide írod a párosításokat (username -> channel_id)
-TWITCH_INTERNAL_FILE = "twitch_streams_state.json"  # opcionális (nem kötelező)
+TWITCH_FILE = "twitch_streams.json"
+TWITCH_INTERNAL_FILE = "twitch_streams_state.json"
 
-# Twitch ellenőrzési beállítások
-TWITCH_CHECK_INTERVAL_SECONDS = 60          # lekérdezési gyakoriság (másodperc)
-TWITCH_FILE_RELOAD_INTERVAL_SECONDS = 300   # milyen gyakran olvassa újra a twitch fájlt (másodperc)
+# Twitch beállítások
+TWITCH_CHECK_INTERVAL_SECONDS = 60
+TWITCH_FILE_RELOAD_INTERVAL_SECONDS = 300
 
-# Áttetszőség beállítás (0-100) a státusz oldalon
+# Web státusz áttetszőség
 TRANSPARENCY = 100
 
 # ------------------------
@@ -43,15 +43,14 @@ intents.members = True
 
 class MyBot(commands.Bot):
     async def setup_hook(self):
-        # Indítsd itt aszinkron a watcher-t és a webserver-t -> Render kompatibilis
+        # Indítsuk el a watcher-t és webserver-t aszinkron (Render-kompatibilis)
         self.loop.create_task(twitch_watcher())
         self.loop.create_task(start_webserver())
-        # ide jöhet további init (pl. cogs)
 
 bot = MyBot(command_prefix='!', intents=intents)
 
 # ------------------------
-# Helper: Engedélyezett szerverek betöltése
+# Engedélyezett szerverek betöltése
 # ------------------------
 def load_allowed_guilds():
     if not os.path.exists(ALLOWED_GUILDS_FILE):
@@ -70,7 +69,6 @@ def load_reaction_roles():
     with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
         try:
             raw = json.load(f)
-            # konvertáljuk kulcsokat számokra (guild_id és message_id)
             out = {}
             for gid, msgs in raw.items():
                 try:
@@ -83,13 +81,12 @@ def load_reaction_roles():
                         mid_i = int(mid)
                     except:
                         continue
-                    out[gid_i][mid_i] = emmap  # emmap: {emoji: role_name}
+                    out[gid_i][mid_i] = emmap
             return out
         except json.JSONDecodeError:
             return {}
 
 def save_reaction_roles(data):
-    # konvertáljuk string kulcsokra a json mentéshez
     serial = { str(gid): { str(mid): emmap for mid, emmap in msgs.items() } for gid, msgs in data.items() }
     with open(REACTION_ROLES_FILE, "w", encoding="utf-8") as f:
         json.dump(serial, f, ensure_ascii=False, indent=4)
@@ -97,8 +94,8 @@ def save_reaction_roles(data):
 reaction_roles = load_reaction_roles()
 
 # ------------------------
-# Twitch streamerek betöltése / mentése (egyszerű párosítás)
-# Formátum a fájlban: [ { "username": "streamer1", "channel_id": 123... }, ... ]
+# Twitch streamerek betöltése / mentése
+# Formátum: [ { "username": "streamer1", "channel_id": 123... }, ... ]
 # ------------------------
 def load_twitch_streamers():
     if not os.path.exists(TWITCH_FILE):
@@ -106,7 +103,6 @@ def load_twitch_streamers():
     with open(TWITCH_FILE, "r", encoding="utf-8") as f:
         try:
             data = json.load(f)
-            # Támogatunk korábbi formátumot is
             if isinstance(data, dict) and "streamers" in data and isinstance(data["streamers"], list):
                 return data["streamers"]
             if isinstance(data, list):
@@ -132,7 +128,6 @@ def build_twitch_state_from_file():
             continue
     return state
 
-# runtime állapot
 twitch_streams = build_twitch_state_from_file()
 
 # ------------------------
@@ -140,7 +135,6 @@ twitch_streams = build_twitch_state_from_file()
 # Visszaad: (live: bool, stream_data: dict|None)
 # ------------------------
 async def is_twitch_live(session, username):
-    """Visszaad: (live: bool, stream_data: dict|None)"""
     if not TWITCH_CLIENT_ID or not TWITCH_ACCESS_TOKEN:
         return False, None
     url = f"https://api.twitch.tv/helix/streams?user_login={username}"
@@ -162,44 +156,22 @@ async def is_twitch_live(session, username):
         print(f"[Twitch API hiba] {e}")
         return False, None
 
-# Ha szükséged van arra, hogy felhasználónévből user_id-t kérjen: (nem feltétlen kell jelen implementációhoz)
-async def get_twitch_user_id(session, username):
-    if not TWITCH_CLIENT_ID or not TWITCH_ACCESS_TOKEN:
-        return None
-    url = f"https://api.twitch.tv/helix/users?login={username}"
-    headers = {
-        "Client-ID": TWITCH_CLIENT_ID,
-        "Authorization": f"Bearer {TWITCH_ACCESS_TOKEN}"
-    }
-    try:
-        async with session.get(url, headers=headers, timeout=15) as resp:
-            if resp.status != 200:
-                return None
-            data = await resp.json()
-            if "data" in data and len(data["data"]) > 0:
-                return data["data"][0].get("id")
-            return None
-    except Exception:
-        return None
-
 # ------------------------
-# Twitch watcher (setup_hook-ban indul)
-# - percenként lekérdez
-# - 5 percenként újraolvasza a twitch listát a fájlból
-# - küld egyszeri embed értesítést, ha újonnan élővé válik
+# Twitch watcher
+# - percenként ellenőriz
+# - 5 percenként újraolvas fájlból
+# - egyszer küld értesítést, amíg a stream fut
 # ------------------------
 async def twitch_watcher():
     await bot.wait_until_ready()
     print("🔁 Twitch watcher elindult.")
     global twitch_streams
 
-    # utolsó fájl újraolvasás időpontja
     last_reload = datetime.utcnow()
     twitch_streams = build_twitch_state_from_file()
 
     while not bot.is_closed():
         try:
-            # fájl újraolvasás, ha szükséges
             now = datetime.utcnow()
             if (now - last_reload).total_seconds() >= TWITCH_FILE_RELOAD_INTERVAL_SECONDS:
                 twitch_streams = build_twitch_state_from_file()
@@ -207,11 +179,9 @@ async def twitch_watcher():
                 print("🔄 Twitch lista újraolvasva fájlból.")
 
             async with aiohttp.ClientSession() as session:
-                # végigmegyünk a twitch_streams-on (runtime state)
                 for username, info in list(twitch_streams.items()):
                     try:
                         live, stream_data = await is_twitch_live(session, username)
-                        # ha él és korábban nem volt live -> küldj értesítést
                         if live and not info.get("live", False):
                             channel_id = info.get("channel_id")
                             channel = bot.get_channel(channel_id)
@@ -232,7 +202,8 @@ async def twitch_watcher():
                                 if thumbnail:
                                     embed.set_image(url=thumbnail)
                                 embed.set_footer(text="Twitch értesítő • Darky Bot")
-                                # megpróbáljuk lekérni a twitch felhasználó avatarját (nem kötelező)
+
+                                # megkíséreljük lekérni a profilképet (nem kötelező)
                                 try:
                                     user_data_url = f"https://api.twitch.tv/helix/users?login={user_name}"
                                     headers = {
@@ -257,11 +228,8 @@ async def twitch_watcher():
                             else:
                                 print(f"⚠️ Nem található csatorna (ID: {channel_id}) a guildben.")
                             twitch_streams[username]["live"] = True
-
-                        # ha nem él és korábban élő volt -> reseteljük az állapotot (így újra értesít, ha később újraindul)
                         elif not live and info.get("live", False):
                             twitch_streams[username]["live"] = False
-
                     except Exception as inner:
                         print(f"[twitch_watcher belső hiba] {inner}")
                         traceback.print_exc()
@@ -277,7 +245,6 @@ async def twitch_watcher():
 # ------------------------
 @bot.check
 async def guild_permission_check(ctx):
-    # dbactivate parancsot engedjük minden helyről futtatni
     if ctx.command and ctx.command.name == "dbactivate":
         return True
     return ctx.guild and ctx.guild.id in allowed_guilds
@@ -290,7 +257,7 @@ async def on_ready():
     print(f"✅ Bejelentkezett: {bot.user} (ID: {bot.user.id})")
 
 # ------------------------
-# AI: Gemini + OpenAI (ahogy eredetileg)
+# AI: Gemini + OpenAI
 # ------------------------
 async def gemini_text(prompt):
     if not GEMINI_API_KEY:
@@ -361,7 +328,7 @@ async def gpt_image(prompt):
         return f"⚠️ OpenAI hiba: {e}"
 
 # ------------------------
-# AI parancsok (megtartva a role/admin checkeket)
+# AI parancsok
 # ------------------------
 @bot.command()
 async def g(ctx, *, prompt: str):
@@ -377,9 +344,9 @@ async def gpic(ctx, *, prompt: str):
 
 def admin_or_role(role_name):
     async def predicate(ctx):
-        # admin jog vagy megadott rang
-        return ctx.author.guild_permissions.administrator or \
-               discord.utils.get(ctx.author.roles, name=role_name)
+        has_admin = ctx.author.guild_permissions.administrator
+        has_role = discord.utils.get(ctx.author.roles, name=role_name) is not None
+        return has_admin or has_role
     return commands.check(predicate)
 
 @bot.command()
@@ -396,31 +363,27 @@ async def gptpic(ctx, *, prompt: str):
     await ctx.send(image_url)
 
 # ------------------------
-# Twitch parancsok: add/remove/list (módosítják a twitch_streams.json fájlt)
+# Twitch parancsok (Admin vagy LightSector II szükséges)
 # ------------------------
 @bot.command()
-@commands.has_permissions(administrator=True)
+@admin_or_role("LightSector II")
 async def twitchadd(ctx, username: str, channel_id: int):
-    """!twitchadd <twitch_username> <discord_channel_id>"""
     username = username.lower()
     arr = load_twitch_streamers()
-    # ellenőrizzük, hogy nincs-e már
     for item in arr:
         if item.get("username", "").lower() == username:
-            item["channel_id"] = channel_id  # frissítjük a csatorna ID-t
+            item["channel_id"] = channel_id
             save_twitch_streamers(arr)
-            # frissítsük runtime állapotot is
             twitch_streams[username] = {"channel_id": channel_id, "live": False}
             await ctx.send(f"🔧 Frissítve: **{username}** → <#{channel_id}>")
             return
-    # hozzáadjuk újként
     arr.append({"username": username, "channel_id": channel_id})
     save_twitch_streamers(arr)
     twitch_streams[username] = {"channel_id": channel_id, "live": False}
     await ctx.send(f"✅ Twitch figyelés hozzáadva: **{username}** → <#{channel_id}>")
 
 @bot.command()
-@commands.has_permissions(administrator=True)
+@admin_or_role("LightSector II")
 async def twitchremove(ctx, username: str):
     username = username.lower()
     arr = load_twitch_streamers()
@@ -433,6 +396,7 @@ async def twitchremove(ctx, username: str):
     await ctx.send(f"❌ Twitch figyelés törölve: **{username}**")
 
 @bot.command()
+@admin_or_role("LightSector II")
 async def twitchlist(ctx):
     arr = load_twitch_streamers()
     if not arr:
@@ -545,7 +509,7 @@ async def on_raw_reaction_remove(payload):
                 print(f"⚠️ Nem sikerült szerepet eltávolítani: {e}")
 
 # ------------------------
-# dbhelp és dbactivate parancsok (eredeti logikával)
+# dbhelp és dbactivate parancsok
 # ------------------------
 @bot.command()
 async def dbhelp(ctx):
@@ -557,7 +521,6 @@ async def dbhelp(ctx):
     if not help_text.strip():
         await ctx.send("⚠️ A help.txt fájl üres.")
         return
-    # Code blockba küldjük
     await ctx.send(f"```{help_text}```")
 
 @bot.command()
@@ -573,7 +536,7 @@ async def dbactivate(ctx):
     await ctx.send(content)
 
 # ------------------------
-# Web szerver (egyszerű status + reaction_roles.json endpoint)
+# Web szerver (status + reaction_roles.json endpoint)
 # ------------------------
 async def handle(request):
     html_content = f"""
@@ -642,13 +605,6 @@ async def start_webserver():
 async def main():
     print("✅ Bot indítás folyamatban...")
     print("DISCORD_TOKEN:", "✅ beállítva" if DISCORD_TOKEN else "❌ HIÁNYZIK")
-    # web szerver indítása és twitch_watcher a setup_hook-ban
-    try:
-        # a setup_hook fogja elindítani twitch_watcher és a webserver (webserver indítást itt is megpróbáljuk ha szükséges)
-        pass
-    except Exception as e:
-        print(f"⚠️ Hiba a webserver indításakor: {e}")
-    # A bot elindítása
     try:
         await bot.start(DISCORD_TOKEN)
     except Exception as e:
