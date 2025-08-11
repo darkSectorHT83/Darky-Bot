@@ -7,10 +7,18 @@ Szerver aktíválása:
 ChatGTP-4o (nem tárol üzenetet):
 !gpt <szöveg>                                   - ChatGPT szöveg (Aárki)
 
-Reaction Role:
+Reaction Role (*):
 !addreaction <üzenet_id> <emoji> <rang neve>    - Reakció hozzáadása (Admin)
 !removereaction <üzenet_id> <emoji>             - Reakció eltávolítása (Admin)
 !listreactions                                  - Reakciók listázása (Aktuális szerverre , Admin)
 
+Twitch Alert (**):
+!dbtwitchadd <twitch_név> <dc_szoba_id>         - Twitch streamer alert beállítása
+!dbtwitchremove <twitch_név>                    - Twitch streamer alert törlése
+!dbtwitchlist                                   - Párosított twitch alertek listája
+!twitch <twitch_név>                            - Streamer info
+
+
 Leírás:
-(egy DC üzenethez egy emoji-t rendelsz amit megnyomva autómatikusan kapsz egy rangot)
+*(egy DC üzenethez egy vagy több emoji-t rendelsz amit megnyomva autómatikusan kapsz egy rangot)
+**(egy DC szobához egy vagy több streamert rendelsz)
