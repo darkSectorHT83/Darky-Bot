@@ -361,6 +361,8 @@ async def gpic(ctx, *, prompt: str):
     await ctx.send(response)
 
 @bot.command()
+@commands.has_permissions(administrator=True)
+@commands.has_role("LightSector")
 async def gpt(ctx, *, prompt: str):
     if ctx.guild.id not in allowed_guilds:
         return await ctx.send("❌ Ez a parancs csak engedélyezett szervereken érhető el.")
@@ -643,3 +645,4 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
+
