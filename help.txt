@@ -1,8 +1,10 @@
-!addreaction <üzenet_id> <emoji> <szerepkör>   - Reakció hozzáadása
-!removereaction <üzenet_id> <emoji>           - Reakció eltávolítása
-!listreactions                                - Reakciók listázása
-!dbactivate                                   - Aktivációs infó megtekintése
-!g <szöveg>                                   - Gemini szöveg (hibás)
-!gpic <szöveg>                                - Gemini kép (hibás)
-!gpt <szöveg>                                 - ChatGPT szöveg
-!gptpic <szöveg>                              - ChatGPT kép (hibás)
+Darky Bot parancslista:
+
+!addreaction <üzenet_id> <emoji> <szerepkör>   - Reakció hozzáadása (Admin)
+!removereaction <üzenet_id> <emoji>           - Reakció eltávolítása (Admin)
+!listreactions                                - Reakciók listázása (Aktuális szerverre , Admin)
+!dbactivate                                   - Aktivációs infó megtekintése (Bárki, bármilyen szerver)
+!g <szöveg>                                   - Gemini szöveg (Hibás)
+!gpic <szöveg>                                - Gemini kép (Hibás)
+!gpt <szöveg>                                 - ChatGPT szöveg (Aárki)
+!gptpic <szöveg>                              - ChatGPT kép (Hibás)
