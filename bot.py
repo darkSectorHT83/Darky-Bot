@@ -360,9 +360,15 @@ async def gpic(ctx, *, prompt: str):
     response = await gemini_image(prompt)
     await ctx.send(response)
 
+def admin_or_role(role_name):
+    async def predicate(ctx):
+        # admin jog vagy megadott rang
+        return ctx.author.guild_permissions.administrator or \
+               discord.utils.get(ctx.author.roles, name=role_name)
+    return commands.check(predicate)
+
 @bot.command()
-@commands.has_permissions(administrator=True)
-@commands.has_role("LightSector")
+@admin_or_role("LightSector")
 async def gpt(ctx, *, prompt: str):
     if ctx.guild.id not in allowed_guilds:
         return await ctx.send("❌ Ez a parancs csak engedélyezett szervereken érhető el.")
@@ -645,4 +651,5 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
+
 
