@@ -19,4 +19,4 @@ Twitch Alert (**):
 
 Leírás:
 *(egy DC üzenethez egy vagy több emoji-t rendelsz amit megnyomva autómatikusan kapsz egy rangot)
-**(egy DC szobához egy vagy több streamert rendelsz)
+**(egy DC szobához egy vagy több streamert rendelsz) !!Még nem működik az alert!!
