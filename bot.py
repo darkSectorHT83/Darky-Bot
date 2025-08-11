@@ -10,6 +10,8 @@ import aiohttp
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
+TWITCH_ACCESS_TOKEN = os.getenv("TWITCH_ACCESS_TOKEN")
 
 # Intents
 intents = discord.Intents.default()
@@ -25,6 +27,7 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
 REACTION_ROLES_FILE = "reaction_roles.json"
 ACTIVATE_INFO_FILE = "activateinfo.txt"
+TWITCH_LINKS_FILE = "twitch_links.json"
 
 # Áttetszőség beállítás (0-100)
 TRANSPARENCY = 100  # 100 = teljesen látható, 0 = teljesen átlátszó
@@ -59,6 +62,20 @@ def save_reaction_roles():
             str(gid): {str(mid): em for mid, em in msgs.items()}
             for gid, msgs in reaction_roles.items()
         }, f, ensure_ascii=False, indent=4)
+
+# Twitch linkek betöltése
+if os.path.exists(TWITCH_LINKS_FILE):
+    with open(TWITCH_LINKS_FILE, "r", encoding="utf-8") as f:
+        try:
+            twitch_links = json.load(f)  # {guild_id: {twitch_username: channel_id}}
+        except json.JSONDecodeError:
+            twitch_links = {}
+else:
+    twitch_links = {}
+
+def save_twitch_links():
+    with open(TWITCH_LINKS_FILE, "w", encoding="utf-8") as f:
+        json.dump(twitch_links, f, ensure_ascii=False, indent=4)
 
 # Globális parancsellenőrzés (kivéve !dbactivate)
 @bot.check
@@ -244,6 +261,68 @@ async def dbactivate(ctx):
 
     await ctx.send(content)
 
+# ------------------------
+# Twitch parancsok és értesítés
+# ------------------------
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def twitchlink(ctx, channel_id: int, twitch_username: str):
+    guild_id = str(ctx.guild.id)
+    if guild_id not in twitch_links:
+        twitch_links[guild_id] = {}
+    twitch_links[guild_id][twitch_username.lower()] = channel_id
+    save_twitch_links()
+    await ctx.send(f"✅ Twitch értesítés beállítva: `{twitch_username}` → <#{channel_id}>")
+
+twitch_live_status = {}  # {(guild_id, twitch_username): bool}
+
+async def check_twitch_streams():
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        for guild_id, user_map in twitch_links.items():
+            for username, channel_id in user_map.items():
+                url = f"https://api.twitch.tv/helix/streams?user_login={username}"
+                headers = {
+                    "Client-ID": TWITCH_CLIENT_ID,
+                    "Authorization": f"Bearer {TWITCH_ACCESS_TOKEN}"
+                }
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(url, headers=headers) as resp:
+                            data = await resp.json()
+                except Exception as e:
+                    print(f"⚠️ Twitch API hiba: {e}")
+                    continue
+
+                is_live = False
+                title = ""
+                if "data" in data and len(data["data"]) > 0:
+                    is_live = True
+                    title = data["data"][0]["title"]
+
+                key = (guild_id, username)
+                was_live = twitch_live_status.get(key, False)
+
+                if is_live and not was_live:
+                    channel = bot.get_channel(channel_id)
+                    if channel:
+                        await channel.send(
+                            f"🔴 **{username}** most élőben van a Twitch-en!\n"
+                            f"🎯 Cím: {title}\n"
+                            f"👉 https://twitch.tv/{username}"
+                        )
+
+                twitch_live_status[key] = is_live
+
+        await asyncio.sleep(60)
+
+bot.loop.create_task(check_twitch_streams())
+
+# ------------------------
+# Reaction eventek
+# ------------------------
+
 @bot.event
 async def on_raw_reaction_add(payload):
     if payload.user_id == bot.user.id:
@@ -286,7 +365,10 @@ async def on_raw_reaction_remove(payload):
             await member.remove_roles(role)
             print(f"❌ {member} elvesztette: {role.name}")
 
-# Webszerver: gyökér
+# ------------------------
+# Webszerver
+# ------------------------
+
 async def handle(request):
     html_content = f"""
     <html>
