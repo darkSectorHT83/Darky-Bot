@@ -27,7 +27,7 @@ REACTION_ROLES_FILE = "reaction_roles.json"
 ACTIVATE_INFO_FILE = "activateinfo.txt"
 
 # Áttetszőség beállítás (0-100)
-TRANSPARENCY = 100  # 100 = 100% látható, 0 = teljesen átlátszó
+TRANSPARENCY = 100  # 100 = teljesen látható, 0 = teljesen átlátszó
 
 # Engedélyezett szerverek betöltése
 def load_allowed_guilds():
@@ -295,11 +295,39 @@ async def handle(request):
     <html>
     <head>
         <title>Darky Bot Status</title>
+        <style>
+            body {{
+                background-color: transparent;
+                text-align: center;
+                margin-top: 50px;
+            }}
+            .container {{
+                position: relative;
+                display: inline-block;
+            }}
+            .status-text {{
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                font-size: 80px;
+                font-weight: bold;
+                color: white;
+                text-shadow: 2px 2px 5px black;
+                pointer-events: none;
+            }}
+            .status-image {{
+                width: 128px;
+                height: 128px;
+                opacity: {TRANSPARENCY / 100};
+            }}
+        </style>
     </head>
-    <body style="background-color: transparent; text-align: center; margin-top: 50px;">
-        <img src="https://kephost.net/p/MjAzODQ3OQ.png" width="128" height="128" 
-             style="opacity: {TRANSPARENCY / 100};"><br>
-        <span style="font-size: 80px; font-weight: bold;">Darky Bot: ONLINE</span>
+    <body>
+        <div class="container">
+            <img class="status-image" src="https://kephost.net/p/MjAzODQ3OQ.png">
+            <div class="status-text">Darky Bot: ONLINE</div>
+        </div>
     </body>
     </html>
     """
