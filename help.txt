@@ -1,4 +1,8 @@
-!addreaction <üzenet_id> <emoji> <szerep_név> – (Hozzárendelés)
-!removereaction <üzenet_id> <emoji> – (Hozzárendelés törlése)
-!listreactions – (Reakció lista megjelenítése)
-!dbhelp – Ez a segítség
+!addreaction <üzenet_id> <emoji> <szerepkör>   - Reakció hozzáadása
+!removereaction <üzenet_id> <emoji>           - Reakció eltávolítása
+!listreactions                                - Reakciók listázása
+!dbactivate                                   - Aktivációs infó megtekintése
+!g <szöveg>                                   - Gemini szöveg
+!gpic <szöveg>                                - Gemini kép
+!gpt <szöveg>                                 - ChatGPT szöveg
+!gptpic <szöveg>                              - ChatGPT kép
