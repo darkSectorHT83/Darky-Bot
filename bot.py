@@ -216,21 +216,18 @@ async def listreactions(ctx):
 
 @bot.command()
 async def dbhelp(ctx):
-    help_text = """
+    if not os.path.exists("help.txt"):
+        await ctx.send("⚠️ A help.txt fájl nem található.")
+        return
 
-📌 Elérhető parancsok:
-!addreaction <üzenet_id> <emoji> <szerepkör>   - Reakció hozzáadása
-!removereaction <üzenet_id> <emoji>           - Reakció eltávolítása
-!listreactions                                - Reakciók listázása
-!dbactivate                                   - Aktivációs infó megtekintése
-!dbhelp                                       - Ez a súgó
-!g <szöveg>                                   - Error
-!gpic <szöveg>                                - Error
-!gpt <szöveg>                                 - ChatGPT szöveges válasz
-!gptpic <szöveg>                              - Error
+    with open("help.txt", "r", encoding="utf-8") as f:
+        help_text = f.read()
 
-"""
-    await ctx.send(help_text)
+    if not help_text.strip():
+        await ctx.send("⚠️ A help.txt fájl üres.")
+        return
+
+    await ctx.send(f"```{help_text}```")
 
 @bot.command()
 async def dbactivate(ctx):
