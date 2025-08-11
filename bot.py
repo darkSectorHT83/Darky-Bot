@@ -10,6 +10,8 @@ import aiohttp
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
+TWITCH_ACCESS_TOKEN = os.getenv("TWITCH_ACCESS_TOKEN")
 
 # Intents
 intents = discord.Intents.default()
@@ -25,9 +27,10 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
 REACTION_ROLES_FILE = "reaction_roles.json"
 ACTIVATE_INFO_FILE = "activateinfo.txt"
+TWITCH_FILE = "twitch_streams.json"
 
 # Áttetszőség beállítás (0-100)
-TRANSPARENCY = 100  # 100 = teljesen látható, 0 = teljesen átlátszó
+TRANSPARENCY = 100
 
 # Engedélyezett szerverek betöltése
 def load_allowed_guilds():
@@ -59,6 +62,35 @@ def save_reaction_roles():
             str(gid): {str(mid): em for mid, em in msgs.items()}
             for gid, msgs in reaction_roles.items()
         }, f, ensure_ascii=False, indent=4)
+
+# Twitch figyelési adatok betöltése
+if os.path.exists(TWITCH_FILE):
+    with open(TWITCH_FILE, "r", encoding="utf-8") as f:
+        try:
+            twitch_streams = json.load(f)
+        except json.JSONDecodeError:
+            twitch_streams = {}
+else:
+    twitch_streams = {}
+
+# Twitch adatok mentése
+def save_twitch_data():
+    with open(TWITCH_FILE, "w", encoding="utf-8") as f:
+        json.dump(twitch_streams, f, ensure_ascii=False, indent=4)
+
+# Twitch API hívás: ellenőrzi, hogy élő-e
+async def is_twitch_live(username):
+    url = f"https://api.twitch.tv/helix/streams?user_login={username}"
+    headers = {
+        "Client-ID": TWITCH_CLIENT_ID,
+        "Authorization": f"Bearer {TWITCH_ACCESS_TOKEN}"
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as resp:
+            data = await resp.json()
+            if "data" in data and len(data["data"]) > 0:
+                return True, data["data"][0]
+            return False, None
 
 # Globális parancsellenőrzés (kivéve !dbactivate)
 @bot.check
@@ -156,6 +188,66 @@ async def gptpic(ctx, *, prompt: str):
     await ctx.send(image_url)
 
 # ------------------------
+# TWITCH PARANCSOK
+# ------------------------
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def twitchadd(ctx, username: str, channel_id: int):
+    twitch_streams[username.lower()] = {
+        "channel_id": channel_id,
+        "live": False
+    }
+    save_twitch_data()
+    await ctx.send(f"✅ Twitch figyelés hozzáadva: **{username}** → <#{channel_id}>")
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def twitchremove(ctx, username: str):
+    if username.lower() in twitch_streams:
+        del twitch_streams[username.lower()]
+        save_twitch_data()
+        await ctx.send(f"❌ Twitch figyelés törölve: **{username}**")
+    else:
+        await ctx.send("⚠️ Nincs ilyen figyelt csatorna.")
+
+@bot.command()
+async def twitchlist(ctx):
+    if not twitch_streams:
+        await ctx.send("ℹ️ Jelenleg nincs figyelt Twitch csatorna.")
+        return
+    msg = "**Figyelt Twitch csatornák:**\n"
+    for user, info in twitch_streams.items():
+        msg += f"🎮 **{user}** → <#{info['channel_id']}>\n"
+    await ctx.send(msg)
+
+async def twitch_watcher():
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        for username, info in twitch_streams.items():
+            live, stream_data = await is_twitch_live(username)
+            if live and not info.get("live", False):
+                channel = bot.get_channel(info["channel_id"])
+                if channel:
+                    title = stream_data.get("title", "Ismeretlen cím")
+                    url = f"https://twitch.tv/{username}"
+                    game = stream_data.get("game_name", "Ismeretlen játék")
+                    await channel.send(
+                        f"🔴 **{username}** élőben van!\n"
+                        f"🎯 Játék: {game}\n"
+                        f"📌 Cím: {title}\n"
+                        f"👉 Nézd meg: {url}"
+                    )
+                twitch_streams[username]["live"] = True
+                save_twitch_data()
+            elif not live and info.get("live", False):
+                twitch_streams[username]["live"] = False
+                save_twitch_data()
+        await asyncio.sleep(60)
+
+bot.loop.create_task(twitch_watcher())
+
+# ------------------------
 # Reakciós és egyéb parancsok
 # ------------------------
 
@@ -164,14 +256,12 @@ async def gptpic(ctx, *, prompt: str):
 async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
     guild_id = ctx.guild.id
     channel = ctx.channel
-
     if guild_id not in reaction_roles:
         reaction_roles[guild_id] = {}
     if message_id not in reaction_roles[guild_id]:
         reaction_roles[guild_id][message_id] = {}
     reaction_roles[guild_id][message_id][emoji] = role_name
     save_reaction_roles()
-
     try:
         message = await channel.fetch_message(message_id)
         await message.add_reaction(emoji)
@@ -206,7 +296,6 @@ async def listreactions(ctx):
     if guild_id not in reaction_roles or not reaction_roles[guild_id]:
         await ctx.send("ℹ️ Nincs beállított reakció ebben a szerverben.")
         return
-
     msg = ""
     for msg_id, emoji_map in reaction_roles[guild_id].items():
         msg += f"📩 Üzenet ID: {msg_id}\n"
@@ -219,14 +308,11 @@ async def dbhelp(ctx):
     if not os.path.exists("help.txt"):
         await ctx.send("⚠️ A help.txt fájl nem található.")
         return
-
     with open("help.txt", "r", encoding="utf-8") as f:
         help_text = f.read()
-
     if not help_text.strip():
         await ctx.send("⚠️ A help.txt fájl üres.")
         return
-
     await ctx.send(f"```{help_text}```")
 
 @bot.command()
@@ -234,14 +320,11 @@ async def dbactivate(ctx):
     if not os.path.exists(ACTIVATE_INFO_FILE):
         await ctx.send("⚠️ Az activateinfo.txt fájl nem található.")
         return
-
     with open(ACTIVATE_INFO_FILE, "r", encoding="utf-8") as f:
         content = f.read()
-
     if not content.strip():
         await ctx.send("⚠️ Az activateinfo.txt fájl üres.")
         return
-
     await ctx.send(content)
 
 @bot.event
@@ -250,15 +333,12 @@ async def on_raw_reaction_add(payload):
         return
     if payload.guild_id not in allowed_guilds:
         return
-
     guild = bot.get_guild(payload.guild_id)
     if not guild:
         return
-
     emoji = str(payload.emoji)
     roles = reaction_roles.get(payload.guild_id, {}).get(payload.message_id)
     role_name = roles.get(emoji) if roles else None
-
     if role_name:
         role = discord.utils.get(guild.roles, name=role_name)
         member = guild.get_member(payload.user_id)
@@ -270,15 +350,12 @@ async def on_raw_reaction_add(payload):
 async def on_raw_reaction_remove(payload):
     if payload.guild_id not in allowed_guilds:
         return
-
     guild = bot.get_guild(payload.guild_id)
     if not guild:
         return
-
     emoji = str(payload.emoji)
     roles = reaction_roles.get(payload.guild_id, {}).get(payload.message_id)
     role_name = roles.get(emoji) if roles else None
-
     if role_name:
         role = discord.utils.get(guild.roles, name=role_name)
         member = guild.get_member(payload.user_id)
@@ -330,7 +407,6 @@ async def handle(request):
 async def get_json(request):
     if not os.path.exists(REACTION_ROLES_FILE):
         return web.json_response({}, status=200, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=4))
-
     with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
         try:
             data = json.load(f)
