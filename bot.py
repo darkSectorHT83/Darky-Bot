@@ -156,7 +156,7 @@ async def gptpic(ctx, *, prompt: str):
     await ctx.send(image_url)
 
 # ------------------------
-# Reakciós és egyéb meglévő parancsok
+# Reakciós és egyéb parancsok
 # ------------------------
 
 @bot.command()
@@ -299,19 +299,16 @@ async def handle(request):
                 margin-top: 50px;
             }}
             .container {{
-                position: relative;
-                display: inline-block;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                gap: 20px;
             }}
             .status-text {{
-                position: absolute;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
                 font-size: 80px;
                 font-weight: bold;
                 color: white;
                 text-shadow: 2px 2px 5px black;
-                pointer-events: none;
             }}
             .status-image {{
                 width: 128px;
@@ -322,7 +319,7 @@ async def handle(request):
     </head>
     <body>
         <div class="container">
-            <img class="status-image" src="https://kephost.net/p/MjAzODQ3OQ.png">
+            <img class="status-image" src="https://kephost.net/p/MjAzODQ3OQ.png" alt="Bot Icon">
             <div class="status-text">Darky Bot: ONLINE</div>
         </div>
     </body>
