@@ -1,4 +1,4 @@
-# bot.py
+# [Darky Bot v3.0.2 - Frissített parancsok és rangnevek]
 import discord
 from discord.ext import commands
 import os
@@ -23,7 +23,7 @@ ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
 REACTION_ROLES_FILE = "reaction_roles.json"
 ACTIVATE_INFO_FILE = "activateinfo.txt"
 TWITCH_FILE = "twitch_streams.json"  # <- ide írod a párosításokat
-TWITCH_INTERNAL_FILE = "twitch_streams_state.json"  # ideiglenes, webre kiírt állapot
+TWITCH_INTERNAL_FILE = "twitch_streams_state.json"  # opcionális belső állapotmentés (nem kötelező)
 
 # Áttetszőség beállítás (0-100) a státusz oldalon
 TRANSPARENCY = 100
@@ -239,7 +239,7 @@ async def twitch_watcher():
                     elif not live and info.get("live", False):
                         # Stream lezárt -> állapot reset
                         twitch_streams[username]["live"] = False
-                    # runtime állapot, nem írjuk ideiglenes fájlba itt (a twitchadd/twitchremove mentik a listát)
+                    # runtime állapot, nem írjuk ideiglenes fájlba itt (a dbtwitch add/remove mentik a listát)
                 except Exception as inner:
                     print(f"[twitch_watcher belső hiba] {inner}")
                     traceback.print_exc()
@@ -363,7 +363,7 @@ def admin_or_role(role_name):
     return commands.check(predicate)
 
 @bot.command()
-@admin_or_role("LightSector")
+@admin_or_role("LightSector GPT")
 async def gpt(ctx, *, prompt: str):
     if ctx.guild.id not in allowed_guilds:
         return await ctx.send("❌ Ez a parancs csak engedélyezett szervereken érhető el.")
@@ -380,13 +380,13 @@ async def gptpic(ctx, *, prompt: str):
     await ctx.send(image_url)
 
 # ------------------------
-# Twitch parancsok: add/remove/list (módosítják a twitch_streams.json fájlt)
-# admin vagy LightSector II kell hozzájuk
+# dbtwitch parancsok: add/remove/list (módosítják a twitch_streams.json fájlt)
+# admin vagy LightSector TWITCH kell hozzájuk
 # ------------------------
-@bot.command()
-@admin_or_role("LightSector II")
-async def twitchadd(ctx, username: str, channel_id: int):
-    """!twitchadd <twitch_username> <discord_channel_id>"""
+@bot.command(name="dbtwitchadd")
+@admin_or_role("LightSector TWITCH")
+async def dbtwitchadd(ctx, username: str, channel_id: int):
+    """!dbtwitchadd <twitch_username> <discord_channel_id>"""
     username = username.lower()
     arr = load_twitch_streamers()
     # ellenőrizzük, hogy nincs-e már
@@ -404,9 +404,9 @@ async def twitchadd(ctx, username: str, channel_id: int):
     twitch_streams[username] = {"channel_id": channel_id, "live": False}
     await ctx.send(f"✅ Twitch figyelés hozzáadva: **{username}** → <#{channel_id}>")
 
-@bot.command()
-@admin_or_role("LightSector II")
-async def twitchremove(ctx, username: str):
+@bot.command(name="dbtwitchremove")
+@admin_or_role("LightSector TWITCH")
+async def dbtwitchremove(ctx, username: str):
     username = username.lower()
     arr = load_twitch_streamers()
     new_arr = [item for item in arr if item.get("username", "").lower() != username]
@@ -417,9 +417,9 @@ async def twitchremove(ctx, username: str):
     twitch_streams.pop(username, None)
     await ctx.send(f"❌ Twitch figyelés törölve: **{username}**")
 
-@bot.command()
-@admin_or_role("LightSector II")
-async def twitchlist(ctx):
+@bot.command(name="dbtwitchlist")
+@admin_or_role("LightSector TWITCH")
+async def dbtwitchlist(ctx):
     arr = load_twitch_streamers()
     if not arr:
         await ctx.send("ℹ️ Jelenleg nincs figyelt Twitch csatorna.")
@@ -433,10 +433,10 @@ async def twitchlist(ctx):
 
 # ------------------------
 # Reakciós parancsok (addreaction, removereaction, listreactions)
-# admin vagy LightSector III kell hozzájuk
+# admin vagy LightSector ROLE kell hozzájuk
 # ------------------------
 @bot.command()
-@admin_or_role("LightSector III")
+@admin_or_role("LightSector ROLE")
 async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
     guild_id = ctx.guild.id
     channel = ctx.channel
@@ -455,7 +455,7 @@ async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
         await ctx.send(f"🔧 {emoji} → {role_name} (üzenet ID: {message_id})")
 
 @bot.command()
-@admin_or_role("LightSector III")
+@admin_or_role("LightSector ROLE")
 async def removereaction(ctx, message_id: int, emoji: str):
     guild_id = ctx.guild.id
     if (
@@ -474,7 +474,7 @@ async def removereaction(ctx, message_id: int, emoji: str):
         await ctx.send("⚠️ Nem található az emoji vagy üzenet.")
 
 @bot.command()
-@admin_or_role("LightSector III")
+@admin_or_role("LightSector ROLE")
 async def listreactions(ctx):
     guild_id = ctx.guild.id
     if guild_id not in reaction_roles or not reaction_roles[guild_id]:
