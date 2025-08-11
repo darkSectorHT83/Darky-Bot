@@ -26,6 +26,9 @@ ALLOWED_GUILDS_FILE = "Reaction.ID.txt"
 REACTION_ROLES_FILE = "reaction_roles.json"
 ACTIVATE_INFO_FILE = "activateinfo.txt"
 
+# Áttetszőség beállítás (0-100)
+TRANSPARENCY = 100  # 100 = 100% látható, 0 = teljesen átlátszó
+
 # Engedélyezett szerverek betöltése
 def load_allowed_guilds():
     if not os.path.exists(ALLOWED_GUILDS_FILE):
@@ -286,7 +289,19 @@ async def on_raw_reaction_remove(payload):
 
 # Webszerver: gyökér
 async def handle(request):
-    return web.Response(text="✅ DarkyBot él!", content_type='text/html')
+    html_content = f"""
+    <html>
+    <head>
+        <title>Darky Bot Status</title>
+    </head>
+    <body style="background-color: transparent; text-align: center; margin-top: 50px;">
+        <img src="https://kephost.net/p/MjAzODQ3OQ.png" width="128" height="128" 
+             style="opacity: {TRANSPARENCY / 100};"><br>
+        <span style="font-size: 80px; font-weight: bold;">Darky Bot: ONLINE</span>
+    </body>
+    </html>
+    """
+    return web.Response(text=html_content, content_type='text/html')
 
 async def get_json(request):
     if not os.path.exists(REACTION_ROLES_FILE):
@@ -320,5 +335,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
