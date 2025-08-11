@@ -1,6 +1,6 @@
 Darky Bot parancslista:
 
-!addreaction <üzenet_id> <emoji> <szerepkör>   - Reakció hozzáadása (Admin)
+!addreaction <üzenet_id> <emoji> <rang neve>   - Reakció hozzáadása (Admin)
 !removereaction <üzenet_id> <emoji>           - Reakció eltávolítása (Admin)
 !listreactions                                - Reakciók listázása (Aktuális szerverre , Admin)
 !dbactivate                                   - Aktivációs infó megtekintése (Bárki, bármilyen szerver)
