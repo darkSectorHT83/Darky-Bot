@@ -432,6 +432,19 @@ async def dbtwitchlist(ctx):
     await ctx.send(msg)
 
 # ------------------------
+# Egyszerű dbtwitch parancs (kért: !dbtwitch <felhasználónév> -> küld egy Twitch linket)
+# ------------------------
+@bot.command(name="dbtwitch")
+async def dbtwitch_cmd(ctx, username: str):
+    """!dbtwitch <twitch_username> - küld egy Twitch linket (Discord előnézettel)."""
+    if not username:
+        return await ctx.send("⚠️ Add meg a Twitch felhasználónevet. Példa: `!dbtwitch shroud`")
+    # egyszerű tisztítás: eltávolítjuk az @-ot vagy esetleges teljes URL-t
+    uname = username.strip().lstrip('@').split('/')[-1]
+    twitch_url = f"https://twitch.tv/{uname}"
+    await ctx.send(twitch_url)
+
+# ------------------------
 # Reakciós parancsok (addreaction, removereaction, listreactions)
 # admin vagy LightSector ROLE kell hozzájuk
 # ------------------------
