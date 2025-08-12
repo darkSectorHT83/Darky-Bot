@@ -2,21 +2,23 @@ DARKY BOT parancslista:
 ***********************
 
 Szerver aktíválása:
-!dbactivate                                     - Aktivációs infó megtekintése (Bárki, bármilyen szerver)
+!dbactivate                                     - Aktiváláshoz leírás (Everyone)
 
 ChatGTP-4o (nem tárol üzenetet):
-!gpt <szöveg>                                   - ChatGPT szöveg (Admin vagy Rang)
+!gpt <szöveg>                                   - ChatGPT Chatbot (Admin/Rang)
 
 Reaction Role (*):
-!addreaction <üzenet_id> <emoji> <rang neve>    - Reakció hozzáadása (Admin)
-!removereaction <üzenet_id> <emoji>             - Reakció eltávolítása (Admin)
-!listreactions                                  - Reakciók listázása (Aktuális szerverre , Admin)
+!addreaction <üzenet_id> <emoji> <rang neve>    - Reakció hozzáadása (Admin/Rang)
+!removereaction <üzenet_id> <emoji>             - Reakció eltávolítása (Admin/Rang)
+!listreactions                                  - Reakciók listázása (Aktuális szerverre, Admin/Rang)
 
 Twitch Alert (**):
-!dbtwitchadd <twitch_név> <dc_szoba_id>         - Twitch streamer alert beállítása
-!dbtwitchremove <twitch_név>                    - Twitch streamer alert törlése
-!dbtwitchlist                                   - Párosított twitch alertek listája
+!dbtwitchadd <twitch_név> <dc_szoba_id>         - Twitch streamer alert beállítása (Admin/Rang)
+!dbtwitchremove <twitch_név>                    - Twitch streamer alert törlése (Admin/Rang)
+!dbtwitchlist                                   - Párosított twitch alertek listája (Aktuális szerverre, Admin/Rang)
+!dbtwitch <twitch_név>                          - Egy adott streamer leinformálása (Admin/Rang)
 
 Leírás:
-*(egy DC üzenethez egy vagy több emoji-t rendelsz amit megnyomva autómatikusan kapsz egy rangot)
-**(egy DC szobához egy vagy több streamert rendelsz) !!Még nem működik az alert!!
+*     (Egy DC üzenethez egy vagy több emoji-t rendelsz amit megnyomva autómatikusan kapsz egy rangot.)
+**    (Egy DC szobához egy vagy több streamert rendelsz.)
+***   (Streamer ellenőrzés, ami jelzi az aktuális státuszt.)
