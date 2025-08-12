@@ -5,7 +5,7 @@ Szerver aktíválása:
 !dbactivate                                     - Aktivációs infó megtekintése (Bárki, bármilyen szerver)
 
 ChatGTP-4o (nem tárol üzenetet):
-!gpt <szöveg>                                   - ChatGPT szöveg (Aárki)
+!gpt <szöveg>                                   - ChatGPT szöveg (Admin vagy Rang)
 
 Reaction Role (*):
 !addreaction <üzenet_id> <emoji> <rang neve>    - Reakció hozzáadása (Admin)
