@@ -124,7 +124,7 @@ def save_twitch_streamers(list_obj):
         print(f"⚠️ Nem sikerült menteni {TWITCH_INTERNAL_FILE}: {e}")
 
 # belső runtime állapot: username.lower() -> {"channel_id": int, "live": bool}
-# ezt minden indításkor újratöltjük a TWITCH_FILE alapján
+# ezt minden indításkor újratöltjuk a TWITCH_FILE alapján
 def build_twitch_state_from_file():
     arr = load_twitch_streamers()
     state = {}
@@ -435,8 +435,10 @@ async def dbtwitchlist(ctx):
 # Egyszerű dbtwitch parancs (kért: !dbtwitch <felhasználónév> -> küld egy Twitch linket)
 # ------------------------
 @bot.command(name="dbtwitch")
-async def dbtwitch_cmd(ctx, username: str):
+async def dbtwitch_cmd(ctx, username: str = None):
     """!dbtwitch <twitch_username> - küld egy Twitch linket (Discord előnézettel)."""
+    if not ctx.guild or ctx.guild.id not in allowed_guilds:
+        return await ctx.send("❌ Ez a parancs csak engedélyezett szervereken érhető el.")
     if not username:
         return await ctx.send("⚠️ Add meg a Twitch felhasználónevet. Példa: `!dbtwitch shroud`")
     # egyszerű tisztítás: eltávolítjuk az @-ot vagy esetleges teljes URL-t
