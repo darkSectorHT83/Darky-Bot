@@ -441,10 +441,14 @@ async def dbtwitch_cmd(ctx, username: str = None):
         return await ctx.send("❌ Ez a parancs csak engedélyezett szervereken érhető el.")
     if not username:
         return await ctx.send("⚠️ Add meg a Twitch felhasználónevet. Példa: `!dbtwitch shroud`")
+    
     # egyszerű tisztítás: eltávolítjuk az @-ot vagy esetleges teljes URL-t
     uname = username.strip().lstrip('@').split('/')[-1]
-    twitch_url = f"https://twitch.tv/{uname}"
-    await ctx.send(twitch_url)
+    
+    message_block = f"```Sziasztok! {uname} kicsapta a streamet! Gyertek lurkolni!```"
+    twitch_link = f"https://twitch.tv/{uname}"
+    
+    await ctx.send(f"{message_block}\n{twitch_link}")
 
 # ------------------------
 # Reakciós parancsok (addreaction, removereaction, listreactions)
@@ -675,3 +679,4 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
+
