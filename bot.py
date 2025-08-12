@@ -1,4 +1,3 @@
-# [Darky Bot v3.0.2 - Frissített parancsok és rangnevek]
 import discord
 from discord.ext import commands
 import os
@@ -95,7 +94,7 @@ def save_reaction_roles():
 
 # ------------------------
 # Twitch streamerek betöltése / mentése (egyszerű párosítás)
-# Formátum: [ { "username": "streamer1", "channel_id": 123... }, ... ]
+# Formátum: [ { "username": "streamer1", "channel_id": 123..., "guild_id": 111... }, ... ]
 # (Te majd kézzel szerkeszted a twitch_streams.json-be a guild_id mezőt, ha szeretnéd.)
 # ------------------------
 def load_twitch_streamers():
@@ -124,8 +123,8 @@ def save_twitch_streamers(list_obj):
     except Exception as e:
         print(f"⚠️ Nem sikerült menteni {TWITCH_INTERNAL_FILE}: {e}")
 
-# belső runtime állapot: username.lower() -> {"channel_id": int, "live": bool}
-# ezt minden indításkor újratöltjuk a TWITCH_FILE alapján
+# belső runtime állapot: guild_id (int or None) -> username.lower() -> {"channel_id": int, "live": bool}
+# ezt minden indításkor újratöltjük a TWITCH_FILE alapján
 def build_twitch_state_from_file():
     arr = load_twitch_streamers()
     state = {}
@@ -133,12 +132,30 @@ def build_twitch_state_from_file():
         try:
             uname = item.get("username", "").lower()
             cid = int(item.get("channel_id"))
+            gid = item.get("guild_id")
+            gid_val = None
+            if gid is None:
+                gid_val = None
+            else:
+                # támogassuk stringként tárolt ID-t is
+                try:
+                    if isinstance(gid, str) and gid.isdigit():
+                        gid_val = int(gid)
+                    elif isinstance(gid, int):
+                        gid_val = gid
+                    else:
+                        gid_val = None
+                except Exception:
+                    gid_val = None
             if uname:
-                state[uname] = {"channel_id": cid, "live": False}
+                if gid_val not in state:
+                    state[gid_val] = {}
+                state[gid_val][uname] = {"channel_id": cid, "live": False}
         except Exception:
             continue
     return state
 
+# runtime állapot inicializálása
 twitch_streams = build_twitch_state_from_file()
 
 # Ha nincs még ideiglenes fájl, hozzuk létre egyszer (biztosítja, hogy a weben legyen mit olvasni)
@@ -210,40 +227,42 @@ async def twitch_watcher():
 
     while not bot.is_closed():
         try:
-            for username, info in list(twitch_streams.items()):
-                try:
-                    live, stream_data = await is_twitch_live(username)
-                    # stream_data tartalmaz: id, user_id, user_name, game_id, game_name, title, viewer_count, started_at, language, thumbnail_url, etc.
-                    if live and not info.get("live", False):
-                        # Stream újonnan élő -> küldj egyszeri SZÖVEGES üzenetet a channel_id-be
-                        channel_id = info.get("channel_id")
-                        channel = bot.get_channel(channel_id)
-                        if channel:
-                            title = stream_data.get("title", "Ismeretlen cím")
-                            user_name = stream_data.get("user_name", username)
-                            game_name = stream_data.get("game_name", "Ismeretlen játék")
-                            # SZÖVEGES üzenet (nem embed)
-                            msg = (
-                                f"🎥 **{user_name}** élőben van a Twitch-en!\n"
-                                f"📌 Mit streamel: {game_name}\n"
-                                f"🔗 https://twitch.tv/{user_name}\n"
-                                f"📝 Cím: {title}"
-                            )
-                            try:
-                                await channel.send(msg)
-                                print(f"➡️ Szöveges értesítés elküldve: {user_name} -> {channel_id}")
-                            except Exception as e:
-                                print(f"⚠️ Nem sikerült értesítést küldeni {user_name} -> {channel_id}: {e}")
-                        else:
-                            print(f"⚠️ Nem található csatorna (ID: {channel_id}) a guildben.")
-                        twitch_streams[username]["live"] = True
-                    elif not live and info.get("live", False):
-                        # Stream lezárt -> állapot reset
-                        twitch_streams[username]["live"] = False
-                    # runtime állapot, nem írjuk ideiglenes fájlba itt (a dbtwitch add/remove mentik a listát)
-                except Exception as inner:
-                    print(f"[twitch_watcher belső hiba] {inner}")
-                    traceback.print_exc()
+            # A twitch_streams most szerkezet: { guild_id_or_None: { username: {channel_id, live}, ... }, ... }
+            for guild_id, users in list(twitch_streams.items()):
+                for username, info in list(users.items()):
+                    try:
+                        live, stream_data = await is_twitch_live(username)
+                        # stream_data tartalmaz: id, user_id, user_name, game_id, game_name, title, viewer_count, started_at, language, thumbnail_url, etc.
+                        if live and not info.get("live", False):
+                            # Stream újonnan élő -> küldj egyszeri SZÖVEGES üzenetet a channel_id-be
+                            channel_id = info.get("channel_id")
+                            channel = bot.get_channel(channel_id)
+                            if channel:
+                                title = stream_data.get("title", "Ismeretlen cím")
+                                user_name = stream_data.get("user_name", username)
+                                game_name = stream_data.get("game_name", "Ismeretlen játék")
+                                # SZÖVEGES üzenet (nem embed)
+                                msg = (
+                                    f"🎥 **{user_name}** élőben van a Twitch-en!\n"
+                                    f"📌 Mit streamel: {game_name}\n"
+                                    f"🔗 https://twitch.tv/{user_name}\n"
+                                    f"📝 Cím: {title}"
+                                )
+                                try:
+                                    await channel.send(msg)
+                                    print(f"➡️ Szöveges értesítés elküldve: {user_name} -> {channel_id} (guild: {guild_id})")
+                                except Exception as e:
+                                    print(f"⚠️ Nem sikerült értesítést küldeni {user_name} -> {channel_id}: {e}")
+                            else:
+                                print(f"⚠️ Nem található csatorna (ID: {channel_id}) a guildben (guild_id: {guild_id}).")
+                            twitch_streams[guild_id][username]["live"] = True
+                        elif not live and info.get("live", False):
+                            # Stream lezárt -> állapot reset
+                            twitch_streams[guild_id][username]["live"] = False
+                        # runtime állapot, nem írjuk ideiglenes fájlba itt (a dbtwitch add/remove mentik a listát)
+                    except Exception as inner:
+                        print(f"[twitch_watcher belső hiba] {inner}")
+                        traceback.print_exc()
             await asyncio.sleep(60)  # ellenőrzés gyakorisága (másodperc)
         except Exception as e:
             print(f"[twitch_watcher főhiba] {e}")
@@ -381,35 +400,73 @@ async def gptpic(ctx, *, prompt: str):
 @admin_or_role("LightSector TWITCH")
 async def dbtwitchadd(ctx, username: str, channel_id: int):
     """!dbtwitchadd <twitch_username> <discord_channel_id>"""
-    username = username.lower()
+    username = username.lower().strip().lstrip('@').split('/')[-1]
+    guild_id = ctx.guild.id if ctx.guild else None
+
     arr = load_twitch_streamers()
-    # ellenőrizzük, hogy nincs-e már
+    # ellenőrizzük, hogy nincs-e már ugyanabban a guildben
     for item in arr:
-        if item.get("username", "").lower() == username:
-            item["channel_id"] = channel_id  # frissítjük a csatorna ID-t
-            save_twitch_streamers(arr)
-            # frissítsük runtime állapotot is
-            twitch_streams[username] = {"channel_id": channel_id, "live": False}
-            await ctx.send(f"🔧 Frissítve: **{username}** → <#{channel_id}>")
-            return
-    # hozzáadjuk újként
-    arr.append({"username": username, "channel_id": channel_id})
+        if item.get("username", "").lower() == username and item.get("guild_id") is not None:
+            try:
+                item_gid = int(item.get("guild_id")) if isinstance(item.get("guild_id"), (int, str)) and str(item.get("guild_id")).isdigit() else None
+            except Exception:
+                item_gid = None
+            if item_gid == guild_id:
+                item["channel_id"] = channel_id  # frissítjük a csatorna ID-t
+                save_twitch_streamers(arr)
+                # frissítsük runtime állapot is
+                if guild_id not in twitch_streams:
+                    twitch_streams[guild_id] = {}
+                twitch_streams[guild_id][username] = {"channel_id": channel_id, "live": False}
+                await ctx.send(f"🔧 Frissítve: **{username}** → <#{channel_id}>")
+                return
+    # nincs ilyen bejegyzés ugyanabban a guildben -> hozzáadjuk újként
+    new_item = {"username": username, "channel_id": channel_id, "guild_id": guild_id}
+    arr.append(new_item)
     save_twitch_streamers(arr)
-    twitch_streams[username] = {"channel_id": channel_id, "live": False}
-    await ctx.send(f"✅ Twitch figyelés hozzáadva: **{username}** → <#{channel_id}>")
+    if guild_id not in twitch_streams:
+        twitch_streams[guild_id] = {}
+    twitch_streams[guild_id][username] = {"channel_id": channel_id, "live": False}
+    await ctx.send(f"✅ Twitch figyelés hozzáadva: **{username}** → <#{channel_id}> (szerver: {guild_id})")
 
 @bot.command(name="dbtwitchremove")
 @admin_or_role("LightSector TWITCH")
 async def dbtwitchremove(ctx, username: str):
-    username = username.lower()
+    username = username.lower().strip().lstrip('@').split('/')[-1]
+    guild_id = ctx.guild.id if ctx.guild else None
     arr = load_twitch_streamers()
-    new_arr = [item for item in arr if item.get("username", "").lower() != username]
-    if len(new_arr) == len(arr):
-        await ctx.send("⚠️ Nincs ilyen figyelt streamer.")
+    new_arr = []
+    removed = False
+    for item in arr:
+        try:
+            item_un = item.get("username", "").lower()
+            item_gid_raw = item.get("guild_id")
+            item_gid = None
+            if item_gid_raw is not None:
+                if isinstance(item_gid_raw, str) and item_gid_raw.isdigit():
+                    item_gid = int(item_gid_raw)
+                elif isinstance(item_gid_raw, int):
+                    item_gid = item_gid_raw
+            # csak akkor töröljük, ha username és guild_id egyezik
+            if item_un == username and item_gid == guild_id:
+                removed = True
+                continue
+            new_arr.append(item)
+        except Exception:
+            new_arr.append(item)
+    if not removed:
+        await ctx.send("⚠️ Nincs ilyen figyelt streamer ebben a szerveren.")
         return
     save_twitch_streamers(new_arr)
-    twitch_streams.pop(username, None)
-    await ctx.send(f"❌ Twitch figyelés törölve: **{username}**")
+    # runtime állapot frissítése
+    try:
+        if guild_id in twitch_streams and username in twitch_streams[guild_id]:
+            del twitch_streams[guild_id][username]
+            if not twitch_streams[guild_id]:
+                del twitch_streams[guild_id]
+    except Exception:
+        pass
+    await ctx.send(f"❌ Twitch figyelés törölve: **{username}** (szerver: {guild_id})")
 
 @bot.command(name="dbtwitchlist")
 @admin_or_role("LightSector TWITCH")
