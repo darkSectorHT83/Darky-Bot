@@ -96,6 +96,7 @@ def save_reaction_roles():
 # ------------------------
 # Twitch streamerek betöltése / mentése (egyszerű párosítás)
 # Formátum: [ { "username": "streamer1", "channel_id": 123... }, ... ]
+# (Te majd kézzel szerkeszted a twitch_streams.json-be a guild_id mezőt, ha szeretnéd.)
 # ------------------------
 def load_twitch_streamers():
     if not os.path.exists(TWITCH_FILE):
@@ -355,13 +356,6 @@ async def gpic(ctx, *, prompt: str):
     response = await gemini_image(prompt)
     await ctx.send(response)
 
-def admin_or_role(role_name):
-    async def predicate(ctx):
-        # admin jog vagy megadott rang
-        return ctx.author.guild_permissions.administrator or \
-               discord.utils.get(ctx.author.roles, name=role_name)
-    return commands.check(predicate)
-
 @bot.command()
 @admin_or_role("LightSector GPT")
 async def gpt(ctx, *, prompt: str):
@@ -420,21 +414,49 @@ async def dbtwitchremove(ctx, username: str):
 @bot.command(name="dbtwitchlist")
 @admin_or_role("LightSector TWITCH")
 async def dbtwitchlist(ctx):
+    """
+    Most szerverenként listázza a twitch párosításokat.
+    A twitch_streams.json-be te magad adhatod meg a 'guild_id' mezőt (int vagy string),
+    ekkor csak az aktuális szerver bejegyzései jelennek meg.
+    """
     arr = load_twitch_streamers()
-    if not arr:
-        await ctx.send("ℹ️ Jelenleg nincs figyelt Twitch csatorna.")
-        return
-    msg = "**Figyelt Twitch csatornák:**\n"
+    # szűrés: csak olyan bejegyzések, amelyek tartalmazzák a guild_id-t és az megegyezik az aktuális szerverrel
+    guild_entries = []
     for item in arr:
-        uname = item.get("username")
+        gid = item.get("guild_id")
+        if gid is None:
+            # ha nincs guild_id, kihagyjuk (te írod majd be kézzel a fájlba a guild_id mezőt)
+            continue
+        try:
+            # támogassuk stringként tárolt ID-t is
+            if isinstance(gid, str) and gid.isdigit():
+                gid_val = int(gid)
+            elif isinstance(gid, int):
+                gid_val = gid
+            else:
+                continue
+            if gid_val == ctx.guild.id:
+                guild_entries.append(item)
+        except Exception:
+            continue
+
+    if not guild_entries:
+        await ctx.send("ℹ️ Jelenleg nincs figyelt Twitch csatorna ehhez a szerverhez.")
+        return
+
+    msg = "**Figyelt Twitch csatornák (szerverre szűrve):**\n"
+    for item in guild_entries:
+        uname = item.get("username") or item.get("twitch_username") or "Ismeretlen"
         cid = item.get("channel_id")
         msg += f"🎮 **{uname}** → <#{cid}>\n"
     await ctx.send(msg)
 
 # ------------------------
 # Egyszerű dbtwitch parancs (kért: !dbtwitch <felhasználónév> -> küld egy Twitch linket)
+# Most csak admin vagy LightSector TWITCH II ranggal használható, és csak aktivált szervereken.
 # ------------------------
 @bot.command(name="dbtwitch")
+@admin_or_role("LightSector TWITCH II")
 async def dbtwitch_cmd(ctx, username: str = None):
     """!dbtwitch <twitch_username> - küld egy Twitch linket előnézettel."""
     if not ctx.guild or ctx.guild.id not in allowed_guilds:
@@ -457,7 +479,10 @@ async def dbtwitch_cmd(ctx, username: str = None):
 
     async with aiohttp.ClientSession() as session:
         async with session.get(twitch_api_url, headers=headers) as resp:
-            data = await resp.json()
+            try:
+                data = await resp.json()
+            except Exception:
+                data = {}
 
     # 2️⃣ Embed panel
     embed = discord.Embed(
@@ -471,12 +496,13 @@ async def dbtwitch_cmd(ctx, username: str = None):
         title = stream.get("title", "Nincs cím")
         game = stream.get("game_name", "Ismeretlen játék")
         viewers = stream.get("viewer_count", 0)
-        preview_url = stream["thumbnail_url"].replace("{width}", "1280").replace("{height}", "720")
+        preview_url = stream.get("thumbnail_url", "").replace("{width}", "1280").replace("{height}", "720")
 
         embed.add_field(name="🎯 Cím", value=title, inline=False)
         embed.add_field(name="🎮 Játék", value=game, inline=True)
         embed.add_field(name="👥 Nézők", value=str(viewers), inline=True)
-        embed.set_image(url=preview_url)
+        if preview_url:
+            embed.set_image(url=preview_url)
         embed.set_footer(text="🔴 Jelenleg élőben!")
     else:
         embed.description = "⚪ Jelenleg offline."
@@ -713,5 +739,3 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
-
-
