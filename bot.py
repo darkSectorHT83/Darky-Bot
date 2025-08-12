@@ -436,19 +436,53 @@ async def dbtwitchlist(ctx):
 # ------------------------
 @bot.command(name="dbtwitch")
 async def dbtwitch_cmd(ctx, username: str = None):
-    """!dbtwitch <twitch_username> - küld egy Twitch linket (Discord előnézettel)."""
+    """!dbtwitch <twitch_username> - küld egy Twitch linket előnézettel."""
     if not ctx.guild or ctx.guild.id not in allowed_guilds:
         return await ctx.send("❌ Ez a parancs csak engedélyezett szervereken érhető el.")
+
     if not username:
         return await ctx.send("⚠️ Add meg a Twitch felhasználónevet. Példa: `!dbtwitch shroud`")
-    
-    # egyszerű tisztítás: eltávolítjuk az @-ot vagy esetleges teljes URL-t
+
     uname = username.strip().lstrip('@').split('/')[-1]
-    
-    message_block = f"```Sziasztok! {uname} kicsapta a streamet! Gyertek lurkolni!```"
-    twitch_link = f"https://twitch.tv/{uname}"
-    
-    await ctx.send(f"{message_block}\n{twitch_link}")
+
+    # 1️⃣ Block üzenet
+    await ctx.send(f"```Sziasztok! {uname} kicsapta a streamet! Gyertek lurkolni!```")
+
+    # Twitch API lekérés az élő adatokhoz
+    twitch_api_url = f"https://api.twitch.tv/helix/streams?user_login={uname}"
+    headers = {
+        "Client-ID": os.getenv("TWITCH_CLIENT_ID"),
+        "Authorization": f"Bearer {os.getenv('TWITCH_ACCESS_TOKEN')}"
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(twitch_api_url, headers=headers) as resp:
+            data = await resp.json()
+
+    # 2️⃣ Embed panel
+    embed = discord.Embed(
+        title=f"{uname} Twitch csatornája",
+        url=f"https://twitch.tv/{uname}",
+        color=discord.Color.purple()
+    )
+
+    if data.get("data"):
+        stream = data["data"][0]
+        title = stream.get("title", "Nincs cím")
+        game = stream.get("game_name", "Ismeretlen játék")
+        viewers = stream.get("viewer_count", 0)
+        preview_url = stream["thumbnail_url"].replace("{width}", "1280").replace("{height}", "720")
+
+        embed.add_field(name="🎯 Cím", value=title, inline=False)
+        embed.add_field(name="🎮 Játék", value=game, inline=True)
+        embed.add_field(name="👥 Nézők", value=str(viewers), inline=True)
+        embed.set_image(url=preview_url)
+        embed.set_footer(text="🔴 Jelenleg élőben!")
+    else:
+        embed.description = "⚪ Jelenleg offline."
+
+    await ctx.send(embed=embed)
+
 
 # ------------------------
 # Reakciós parancsok (addreaction, removereaction, listreactions)
@@ -679,4 +713,5 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
+
 
