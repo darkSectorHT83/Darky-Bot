@@ -286,42 +286,75 @@ async def on_ready():
     print(f"✅ Bejelentkezett: {bot.user} (ID: {bot.user.id})")
 
 # ------------------------
-# AI: Gemini + OpenAI (ahogy eredetileg)
+# AI: Gemini + OpenAI (AHOL CSAK A GEMINI RÉSZT MÓDOSÍTOTTUK)
 # ------------------------
-async def gemini_text(prompt):
+async def _gemini_generate(parts, model: str = "gemini-1.5-flash", system_instruction: str | None = None):
+    """
+    Stabilabb Gemini hívás a v1beta /generateContent végponttal.
+    - parts: pl. [ { "text": "Szia" } ]
+    - model: "gemini-1.5-flash" vagy "gemini-1.5-pro"
+    """
     if not GEMINI_API_KEY:
         return "⚠️ Nincs GEMINI_API_KEY beállítva."
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
+    base = "https://generativelanguage.googleapis.com/v1beta"
+    url = f"{base}/models/{model}:generateContent?key={GEMINI_API_KEY}"
     headers = {"Content-Type": "application/json"}
-    data = {"contents": [{"parts": [{"text": prompt}]}]}
+
+    payload = {
+        "contents": [{
+            "role": "user",
+            "parts": parts
+        }]
+    }
+    if system_instruction:
+        payload["systemInstruction"] = {"role": "system", "parts": [{"text": system_instruction}]}
+
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=data, timeout=30) as resp:
-                result = await resp.json()
-                try:
-                    return result["candidates"][0]["content"]["parts"][0]["text"]
-                except:
-                    return "⚠️ Gemini hiba történt."
+        timeout = aiohttp.ClientTimeout(total=60)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(url, headers=headers, json=payload) as resp:
+                data = await resp.json(content_type=None)
+                if resp.status != 200:
+                    # részletes hibaüzenet
+                    err_msg = None
+                    if isinstance(data, dict):
+                        err = data.get("error") or {}
+                        err_msg = err.get("message") or err.get("status")
+                    return f"⚠️ Gemini API hiba ({resp.status}): {err_msg or str(data)[:500]}"
+
+                # sikeres válasz feldolgozása
+                if isinstance(data, dict) and data.get("candidates"):
+                    cand = data["candidates"][0]
+                    # safety / block ellenőrzés
+                    if "finishReason" in cand and cand["finishReason"] == "SAFETY":
+                        return "⚠️ A választ biztonsági okból blokkolta a Gemini."
+                    parts_out = cand.get("content", {}).get("parts", [])
+                    texts = [p.get("text") for p in parts_out if isinstance(p, dict) and p.get("text")]
+                    if texts:
+                        return "\n".join(texts)
+
+                # promptFeedback eset
+                if isinstance(data, dict) and data.get("promptFeedback"):
+                    pf = data["promptFeedback"]
+                    return f"⚠️ A kérést elutasította a Gemini: {pf.get('blockReason', 'ismeretlen ok')}"
+
+                return f"⚠️ Váratlan Gemini válasz: {str(data)[:800]}"
+    except asyncio.TimeoutError:
+        return "⚠️ Gemini időtúllépés (timeout)."
     except Exception as e:
         return f"⚠️ Gemini hiba: {e}"
+
+async def gemini_text(prompt):
+    # csak a belső hívás logikája változott
+    return await _gemini_generate(parts=[{"text": prompt}], model="gemini-1.5-flash")
 
 async def gemini_image(prompt):
-    if not GEMINI_API_KEY:
-        return "⚠️ Nincs GEMINI_API_KEY beállítva."
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent?key={GEMINI_API_KEY}"
-    headers = {"Content-Type": "application/json"}
-    data = {"contents": [{"parts": [{"text": prompt}]}]}
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=data, timeout=30) as resp:
-                result = await resp.json()
-                try:
-                    return result["candidates"][0]["content"]["parts"][0]["text"]
-                except:
-                    return "⚠️ Gemini kép generálási hiba."
-    except Exception as e:
-        return f"⚠️ Gemini hiba: {e}"
+    # jelen implementáció szöveges választ ad vissza (leírás), képgenerálás helyett
+    return await _gemini_generate(parts=[{"text": prompt}], model="gemini-1.5-flash")
 
+# ------------------------
+# OPENAI (változatlanul hagyva)
+# ------------------------
 async def gpt_text(prompt):
     if not OPENAI_API_KEY:
         return "⚠️ Nincs OPENAI_API_KEY beállítva."
@@ -357,7 +390,7 @@ async def gpt_image(prompt):
         return f"⚠️ OpenAI hiba: {e}"
 
 # ------------------------
-# AI parancsok
+# AI parancsok (változatlan interfésszel)
 # ------------------------
 @bot.command()
 async def g(ctx, *, prompt: str):
