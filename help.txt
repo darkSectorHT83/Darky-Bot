@@ -2,10 +2,13 @@ DARKY BOT parancslista:
 ***********************
 
 Szerver aktíválása:
-!dbactivate                                     - Aktiváláshoz leírás (Everyone)
+!dbactivate                                     - Aktiváláshoz leírás (Everyone, https://www.darksector.hu/darky_bot/DarkyBot.html )
 
-ChatGTP-4o (nem tárol üzenetet):
-!gpt <szöveg>                                   - ChatGPT Chatbot (Admin/Rang)
+ChatGTP-4o AI (nem tárol üzenetet):
+!gpt <szöveg>                                   - ChatGPT Chatbot (Admin/Rang, adatbázis 2023.10.01)
+
+Gemini AI (nem tárol üzenetet):
+!gpt <szöveg>                                   - Gemini Chatbot (Admin/Rang, adatbázis 2023.10.01)
 
 Reaction Role (*):
 !addreaction <üzenet_id> <emoji> <rang neve>    - Reakció hozzáadása (Admin/Rang)
