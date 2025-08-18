@@ -266,11 +266,11 @@ async def twitch_watcher():
                                 game_name = stream_data.get("game_name", "Ismeretlen játék")
                                 # SZÖVEGES üzenet (nem embed)
                                 msg = (
-    f"🎥 **{user_name}** élőben van a Twitch-en!\n"
-    f"📌 Mit streamel: {game_name}\n"
-    f"🔗 https://twitch.tv/{user_name}\n"
-    f"📝 Cím: {title}"
-)
+                                    f"🎥 **{user_name}** élőben van a Twitch-en!\n"
+                                    f"📌 Mit streamel: {game_name}\n"
+                                    f"🔗 https://twitch.tv/{user_name}\n"
+                                    f"📝 Cím: {title}"
+                                )
                                 try:
                                     await channel.send(msg)
                                     print(f"➡️ Szöveges értesítés elküldve: {user_name} -> {channel_id} (guild: {guild_id})")
@@ -354,8 +354,7 @@ async def _gemini_generate(parts, model: str = "gemini-1.5-flash", system_instru
                     parts_out = cand.get("content", {}).get("parts", [])
                     texts = [p.get("text") for p in parts_out if isinstance(p, dict) and p.get("text")]
                     if texts:
-                        return "
-".join(texts)
+                        return "\n".join(texts)
 
                 # promptFeedback eset
                 if isinstance(data, dict) and data.get("promptFeedback"):
@@ -417,10 +416,6 @@ async def gpt_image(prompt):
 # AI parancsok (változatlan interfésszel)
 # ------------------------
 @bot.command()
-@admin_or_roles_or_users(
-    roles=["LightSector GPT", "LightSector GPT II"],
-    user_ids=[111111111111111111, 222222222222222222]
-)
 async def g(ctx, *, prompt: str):
     if ctx.guild.id not in allowed_guilds:
         return await ctx.send("❌ Ez a parancs csak engedélyezett szervereken érhető el.")
@@ -429,10 +424,6 @@ async def g(ctx, *, prompt: str):
     await ctx.send(response)
 
 @bot.command()
-@admin_or_roles_or_users(
-    roles=["LightSector GPT", "LightSector GPT II"],
-    user_ids=[111111111111111111, 222222222222222222]
-)
 async def gpic(ctx, *, prompt: str):
     if ctx.guild.id not in allowed_guilds:
         return await ctx.send("❌ Ez a parancs csak engedélyezett szervereken érhető el.")
@@ -442,7 +433,7 @@ async def gpic(ctx, *, prompt: str):
 
 @bot.command()
 @admin_or_roles_or_users(
-    roles=["LightSector GPT", "LightSector GPT II"],
+    roles=["LightSector GPT", "LightSector II"],
     user_ids=[111111111111111111, 222222222222222222]
 )
 async def gpt(ctx, *, prompt: str):
@@ -453,10 +444,6 @@ async def gpt(ctx, *, prompt: str):
     await ctx.send(response)
 
 @bot.command()
-@admin_or_roles_or_users(
-    roles=["LightSector GPT", "LightSector GPT II"],
-    user_ids=[111111111111111111, 222222222222222222]
-)
 async def gptpic(ctx, *, prompt: str):
     if ctx.guild.id not in allowed_guilds:
         return await ctx.send("❌ Ez a parancs csak engedélyezett szervereken érhető el.")
@@ -470,7 +457,7 @@ async def gptpic(ctx, *, prompt: str):
 # ------------------------
 @bot.command(name="dbtwitchadd")
 @admin_or_roles_or_users(
-    roles=["LightSector TWITCH", "LightSector TWITCH IV"],
+    roles=["LightSector TWITCH", "LightSector II"],
     user_ids=[111111111111111111, 222222222222222222]
 )
 async def dbtwitchadd(ctx, username: str, channel_id: int):
@@ -506,7 +493,7 @@ async def dbtwitchadd(ctx, username: str, channel_id: int):
 
 @bot.command(name="dbtwitchremove")
 @admin_or_roles_or_users(
-    roles=["LightSector TWITCH", "LightSector TWITCH IV"],
+    roles=["LightSector TWITCH", "LightSector II"],
     user_ids=[111111111111111111, 222222222222222222]
 )
 async def dbtwitchremove(ctx, username: str):
@@ -548,7 +535,7 @@ async def dbtwitchremove(ctx, username: str):
 
 @bot.command(name="dbtwitchlist")
 @admin_or_roles_or_users(
-    roles=["LightSector TWITCH", "LightSector TWITCH IV"],
+    roles=["LightSector TWITCH", "LightSector II"],
     user_ids=[111111111111111111, 222222222222222222]
 )
 async def dbtwitchlist(ctx):
@@ -582,13 +569,11 @@ async def dbtwitchlist(ctx):
         await ctx.send("ℹ️ Jelenleg nincs figyelt Twitch csatorna ehhez a szerverhez.")
         return
 
-    msg = "**Figyelt Twitch csatornák (szerverre szűrve):**
-"
+    msg = "**Figyelt Twitch csatornák (szerverre szűrve):**\n"
     for item in guild_entries:
         uname = item.get("username") or item.get("twitch_username") or "Ismeretlen"
         cid = item.get("channel_id")
-        msg += f"🎮 **{uname}** → <#{cid}>
-"
+        msg += f"🎮 **{uname}** → <#{cid}>\n"
     await ctx.send(msg)
 
 # ------------------------
@@ -596,7 +581,7 @@ async def dbtwitchlist(ctx):
 # ------------------------
 @bot.command(name="dbtwitch")
 @admin_or_roles_or_users(
-    roles=["LightSector TWITCH II", "LightSector TWITCH III"],
+    roles=["LightSector TWITCH II", "LightSector III"],
     user_ids=[111111111111111111, 222222222222222222]
 )
 async def dbtwitch_cmd(ctx, username: str = None):
@@ -658,7 +643,7 @@ async def dbtwitch_cmd(ctx, username: str = None):
 # ------------------------
 @bot.command()
 @admin_or_roles_or_users(
-    roles=["LightSector ROLE", "LightSector ROLE II"],
+    roles=["LightSector ROLE", "LightSector II"],
     user_ids=[111111111111111111, 222222222222222222]
 )
 async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
@@ -680,7 +665,7 @@ async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
 
 @bot.command()
 @admin_or_roles_or_users(
-    roles=["LightSector ROLE", "LightSector ROLE II"],
+    roles=["LightSector ROLE", "LightSector II"],
     user_ids=[111111111111111111, 222222222222222222]
 )
 async def removereaction(ctx, message_id: int, emoji: str):
@@ -702,7 +687,7 @@ async def removereaction(ctx, message_id: int, emoji: str):
 
 @bot.command()
 @admin_or_roles_or_users(
-    roles=["LightSector ROLE", "LightSector ROLE II"],
+    roles=["LightSector ROLE", "LightSector II"],
     user_ids=[111111111111111111, 222222222222222222]
 )
 async def listreactions(ctx):
@@ -712,11 +697,9 @@ async def listreactions(ctx):
         return
     msg = ""
     for msg_id, emoji_map in reaction_roles[guild_id].items():
-        msg += f"📩 Üzenet ID: {msg_id}
-"
+        msg += f"📩 Üzenet ID: {msg_id}\n"
         for emoji, role in emoji_map.items():
-            msg += f"   {emoji} → {role}
-"
+            msg += f"   {emoji} → {role}\n"
     await ctx.send(msg)
 
 # ------------------------
@@ -892,4 +875,3 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
-
