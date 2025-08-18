@@ -266,14 +266,11 @@ async def twitch_watcher():
                                 game_name = stream_data.get("game_name", "Ismeretlen játék")
                                 # SZÖVEGES üzenet (nem embed)
                                 msg = (
-                                    f"🎥 **{user_name}** élőben van a Twitch-en!
-"
-                                    f"📌 Mit streamel: {game_name}
-"
-                                    f"🔗 https://twitch.tv/{user_name}
-"
-                                    f"📝 Cím: {title}"
-                                )
+    f"🎥 **{user_name}** élőben van a Twitch-en!\n"
+    f"📌 Mit streamel: {game_name}\n"
+    f"🔗 https://twitch.tv/{user_name}\n"
+    f"📝 Cím: {title}"
+)
                                 try:
                                     await channel.send(msg)
                                     print(f"➡️ Szöveges értesítés elküldve: {user_name} -> {channel_id} (guild: {guild_id})")
@@ -895,3 +892,4 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
+
