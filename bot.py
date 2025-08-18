@@ -502,7 +502,7 @@ async def dbtwitchremove(ctx, username: str):
     await ctx.send(f"❌ Twitch figyelés törölve: **{username}** (szerver: {guild_id})")
 
 @bot.command(name="dbtwitchlist")
-@admin_or_role("LightSector TWITCH", "1304028573367009337")
+@admin_or_role("LightSector TWITCH", "LightSector ROLE")
 async def dbtwitchlist(ctx):
     """
     Most szerverenként listázza a twitch párosításokat.
@@ -829,6 +829,7 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
+
 
 
 
