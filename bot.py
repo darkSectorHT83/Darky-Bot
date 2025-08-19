@@ -474,7 +474,7 @@ async def fnnew(ctx):
     if ctx.guild.id not in allowed_guilds:
         return await ctx.send("❌ Ez a parancs csak engedélyezett szervereken érhető el.")
 
-    url = "https://fortnite-api.com/v2/shop"
+    url = "https://fortnite-api.com/v2/cosmetics"
     headers = {"Authorization": os.getenv("FORTNITE_API_KEY")}
     await ctx.send("⏳ Lekérdezés folyamatban...")
 
@@ -974,6 +974,7 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
+
 
 
 
