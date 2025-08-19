@@ -484,22 +484,22 @@ async def fnnew(ctx):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers, timeout=15) as resp:
+                if resp.status != 200:
+                    return await ctx.send(f"⚠️ Fortnite API hiba: {resp.status}")
                 data = await resp.json()
     except Exception as e:
         return await ctx.send(f"⚠️ Hiba a Fortnite API hívás közben: {e}")
 
-    if not data or "data" not in data or not data["data"].get("items"):
+    items = data.get("data", {}).get("items", {}).get("br", [])
+    if not items:
         return await ctx.send("⚠️ Nem találtam új itemeket.")
 
-    items = data["data"]["items"]
     msg = "**🆕 Új Fortnite itemek:**\n"
-
     for i, item in enumerate(items, start=1):
         name = item.get("name", "Ismeretlen")
         rarity = item.get("rarity", {}).get("value", "ismeretlen")
         line = f"{i}. {name} ({rarity})\n"
 
-        # Discord üzenet hossz korlátozás kezelése
         if len(msg) + len(line) > 1900:
             await ctx.send(msg)
             msg = ""
@@ -526,22 +526,22 @@ async def fnall(ctx):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers, timeout=60) as resp:
+                if resp.status != 200:
+                    return await ctx.send(f"⚠️ Fortnite API hiba: {resp.status}")
                 data = await resp.json()
     except Exception as e:
         return await ctx.send(f"⚠️ Hiba a Fortnite API hívás közben: {e}")
 
-    if not data or "data" not in data:
+    items = data.get("data", {}).get("items", {}).get("br", [])
+    if not items:
         return await ctx.send("⚠️ Nem sikerült lekérni a shop adatokat.")
 
-    items = data["data"]
     msg = "**🛒 Teljes Fortnite shop/cosmetics lista:**\n"
-
     for i, item in enumerate(items, start=1):
         name = item.get("name", "Ismeretlen")
         rarity = item.get("rarity", {}).get("value", "ismeretlen")
         line = f"{i}. {name} ({rarity})\n"
 
-        # Discord üzenet hossz korlátozás kezelése
         if len(msg) + len(line) > 1900:
             await ctx.send(msg)
             msg = ""
@@ -976,6 +976,7 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
+
 
 
 
