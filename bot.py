@@ -463,6 +463,84 @@ async def gptpic(ctx, *, prompt: str):
     image_url = await gpt_image(prompt)
     await ctx.send(image_url)
 
+
+# ------------------------
+# Fortnite parancsok
+# ------------------------
+@bot.command(name="fnnew")
+@admin_or_roles_or_users(
+    roles=["LightSector FN", "LightSector FN II"],
+    user_ids=[111111111111111111, 222222222222222222]
+)
+async def fnnew(ctx):
+    """Új Fortnite itemek kilistázása"""
+    if ctx.guild.id not in allowed_guilds:
+        return await ctx.send("❌ Ez a parancs csak engedélyezett szervereken érhető el.")
+
+    url = "https://fortnite-api.com/v2/cosmetics/new"
+    headers = {"Authorization": os.getenv("FORTNITE_API_KEY")}
+    await ctx.send("⏳ Lekérdezés folyamatban...")
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=15) as resp:
+                data = await resp.json()
+    except Exception as e:
+        return await ctx.send(f"⚠️ Hiba a Fortnite API hívás közben: {e}")
+
+    if not data or "data" not in data or not data["data"].get("items"):
+        return await ctx.send("⚠️ Nem találtam új itemeket.")
+
+    items = data["data"]["items"]
+    msg = "**🆕 Új Fortnite itemek:**\n"
+    for i, item in enumerate(items[:10], start=1):  # max 10 elem
+        name = item.get("name", "Ismeretlen")
+        rarity = item.get("rarity", {}).get("value", "ismeretlen")
+        msg += f"{i}. {name} ({rarity})\n"
+
+    if len(items) > 10:
+        msg += f"... és még {len(items) - 10} további.\n"
+
+    await ctx.send(msg)
+
+
+@bot.command(name="fnall")
+@admin_or_roles_or_users(
+    roles=["LightSector FN", "LightSector FN II"],
+    user_ids=[111111111111111111, 222222222222222222]
+)
+async def fnall(ctx):
+    """Teljes Fortnite shop/cosmetics lista"""
+    if ctx.guild.id not in allowed_guilds:
+        return await ctx.send("❌ Ez a parancs csak engedélyezett szervereken érhető el.")
+
+    url = "https://fortnite-api.com/v2/cosmetics"
+    headers = {"Authorization": os.getenv("FORTNITE_API_KEY")}
+    await ctx.send("⏳ Lekérdezés folyamatban... Ez eltarthat pár másodpercig...")
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=30) as resp:
+                data = await resp.json()
+    except Exception as e:
+        return await ctx.send(f"⚠️ Hiba a Fortnite API hívás közben: {e}")
+
+    if not data or "data" not in data:
+        return await ctx.send("⚠️ Nem sikerült lekérni a shop adatokat.")
+
+    items = data["data"]
+    msg = "**🛒 Teljes Fortnite shop/cosmetics lista:**\n"
+    for i, item in enumerate(items[:20], start=1):  # max 20 elem, mert sok lehet
+        name = item.get("name", "Ismeretlen")
+        rarity = item.get("rarity", {}).get("value", "ismeretlen")
+        msg += f"{i}. {name} ({rarity})\n"
+
+    if len(items) > 20:
+        msg += f"... és még {len(items) - 20} további.\n"
+
+    await ctx.send(msg)
+
+
 # ------------------------
 # dbtwitch parancsok: add/remove/list (módosítják a twitch_streams.json fájlt)
 # most már több rang + user ID is engedélyezhet
@@ -887,5 +965,6 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
+
 
 
