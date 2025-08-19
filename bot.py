@@ -366,10 +366,10 @@ except Exception:
 # YouTube helper: élő-e vagy legutóbbi videó
 # ------------------------
 async def is_youtube_live_or_latest(username: str):
-    \"\"\"Visszaad: (live: bool, title: str | None, url: str | None)
+    """Visszaad: (live: bool, title: str | None, url: str | None)
     Megjegyzés: a `forUsername` csak legacy YouTube felhasználóneveknél működik. Ha @handle-t adsz meg,
     érdemes a `channels?forUsername` helyett handle feloldást is beépíteni később.
-    \"\"\"
+    """
     if not YOUTUBE_API_KEY:
         return False, None, None
 
