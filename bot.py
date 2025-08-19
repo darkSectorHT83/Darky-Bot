@@ -493,15 +493,20 @@ async def fnnew(ctx):
 
     items = data["data"]["items"]
     msg = "**🆕 Új Fortnite itemek:**\n"
-    for i, item in enumerate(items[:10], start=1):  # max 10 elem
+
+    for i, item in enumerate(items, start=1):
         name = item.get("name", "Ismeretlen")
         rarity = item.get("rarity", {}).get("value", "ismeretlen")
-        msg += f"{i}. {name} ({rarity})\n"
+        line = f"{i}. {name} ({rarity})\n"
 
-    if len(items) > 10:
-        msg += f"... és még {len(items) - 10} további.\n"
+        # Discord üzenet hossz korlátozás kezelése
+        if len(msg) + len(line) > 1900:
+            await ctx.send(msg)
+            msg = ""
+        msg += line
 
-    await ctx.send(msg)
+    if msg:
+        await ctx.send(msg)
 
 
 @bot.command(name="fnall")
@@ -520,7 +525,7 @@ async def fnall(ctx):
 
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, timeout=30) as resp:
+            async with session.get(url, headers=headers, timeout=60) as resp:
                 data = await resp.json()
     except Exception as e:
         return await ctx.send(f"⚠️ Hiba a Fortnite API hívás közben: {e}")
@@ -530,15 +535,21 @@ async def fnall(ctx):
 
     items = data["data"]
     msg = "**🛒 Teljes Fortnite shop/cosmetics lista:**\n"
-    for i, item in enumerate(items[:20], start=1):  # max 20 elem, mert sok lehet
+
+    for i, item in enumerate(items, start=1):
         name = item.get("name", "Ismeretlen")
         rarity = item.get("rarity", {}).get("value", "ismeretlen")
-        msg += f"{i}. {name} ({rarity})\n"
+        line = f"{i}. {name} ({rarity})\n"
 
-    if len(items) > 20:
-        msg += f"... és még {len(items) - 20} további.\n"
+        # Discord üzenet hossz korlátozás kezelése
+        if len(msg) + len(line) > 1900:
+            await ctx.send(msg)
+            msg = ""
+        msg += line
 
-    await ctx.send(msg)
+    if msg:
+        await ctx.send(msg)
+
 
 
 # ------------------------
@@ -965,6 +976,7 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
+
 
 
 
