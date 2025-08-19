@@ -464,9 +464,6 @@ async def gptpic(ctx, *, prompt: str):
     await ctx.send(image_url)
 
 
-# ------------------------
-# Fortnite parancsok
-# ------------------------
 @bot.command(name="fnnew")
 @admin_or_roles_or_users(
     roles=["LightSector FN", "LightSector FN II"],
@@ -490,7 +487,7 @@ async def fnnew(ctx):
     except Exception as e:
         return await ctx.send(f"⚠️ Hiba a Fortnite API hívás közben: {e}")
 
-    items = data.get("data", {}).get("items", {}).get("br", [])
+    items = data.get("data", {}).get("daily", [])  # Új itemekhez a daily listát használjuk
     if not items:
         return await ctx.send("⚠️ Nem találtam új itemeket.")
 
@@ -532,7 +529,7 @@ async def fnall(ctx):
     except Exception as e:
         return await ctx.send(f"⚠️ Hiba a Fortnite API hívás közben: {e}")
 
-    items = data.get("data", {}).get("items", {}).get("br", [])
+    items = data.get("data", {}).get("featured", []) + data.get("data", {}).get("daily", [])
     if not items:
         return await ctx.send("⚠️ Nem sikerült lekérni a shop adatokat.")
 
@@ -549,6 +546,7 @@ async def fnall(ctx):
 
     if msg:
         await ctx.send(msg)
+
 
 
 
@@ -976,6 +974,7 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
+
 
 
 
