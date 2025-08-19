@@ -2,26 +2,33 @@ DARKY BOT parancslista:
 ***********************
 
 Szerver aktíválása:
-!dbactivate                                     - Aktiváláshoz leírás (Everyone, https://www.darksector.hu/darky_bot/DarkyBot.html )
+!dbactivate                                     - Aktiváláshoz leírás (Everyone)
+
+
+AKTÍVÁLÁS SZÜKSÉGES:
+********************
+
+Darky Bot parancslista:
+!dbhelp                                         - Darky Bot parancs lista (Admin/Rang/User)
 
 ChatGTP-4o AI (nem tárol üzenetet):
-!gpt <szöveg>                                   - ChatGPT Chatbot (Admin/Rang, adatbázis 2023.10.01)
+!gpt <szöveg>                                   - ChatGPT Chatbot (Admin/Rang/User, adatbázis 2023.10.01)
 
 Gemini AI (nem tárol üzenetet):
-!gpt <szöveg>                                   - Gemini Chatbot (Admin/Rang, adatbázis 2023.10.01)
+!gpt <szöveg>                                   - Gemini Chatbot (Admin/Rang/User, adatbázis 2023.10.01)
 
 Reaction Role (*):
-!addreaction <üzenet_id> <emoji> <rang neve>    - Reakció hozzáadása (Admin/Rang)
-!removereaction <üzenet_id> <emoji>             - Reakció eltávolítása (Admin/Rang)
-!listreactions                                  - Reakciók listázása (Aktuális szerverre, Admin/Rang)
+!addreaction <üzenet_id> <emoji> <rang neve>    - Reakció hozzáadása (Admin/Rang/User)
+!removereaction <üzenet_id> <emoji>             - Reakció eltávolítása (Admin/Rang/User)
+!listreactions                                  - Reakciók listázása (Aktuális szerverre, Admin/Rang/User)
 
 Twitch Alert (**):
-!dbtwitchadd <twitch_név> <dc_szoba_id>         - Twitch streamer alert beállítása (Admin/Rang)
-!dbtwitchremove <twitch_név>                    - Twitch streamer alert törlése (Admin/Rang)
-!dbtwitchlist                                   - Párosított twitch alertek listája (Aktuális szerverre, Admin/Rang)
+!dbtwitchadd <twitch_név> <dc_szoba_id>         - Twitch streamer alert beállítása (Admin/Rang/User)
+!dbtwitchremove <twitch_név>                    - Twitch streamer alert törlése (Admin/Rang/User)
+!dbtwitchlist                                   - Párosított twitch alertek listája (Aktuális szerverre, Admin/Rang/User)
 
 Twitch Info (***):
-!dbtwitch <twitch_név>                          - Egy adott streamer leinformálása (Admin/Rang)
+!dbtwitch <twitch_név>                          - Egy adott streamer leinformálása (Admin/Rang/User)
 
 Leírás:
 *     (Egy DC üzenethez egy vagy több emoji-t rendelsz amit megnyomva autómatikusan kapsz egy rangot.)
