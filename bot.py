@@ -463,93 +463,6 @@ async def gptpic(ctx, *, prompt: str):
     image_url = await gpt_image(prompt)
     await ctx.send(image_url)
 
-
-@bot.command(name="fnnew")
-@admin_or_roles_or_users(
-    roles=["LightSector FN", "LightSector FN II"],
-    user_ids=[111111111111111111, 222222222222222222]
-)
-async def fnnew(ctx):
-    """Új Fortnite itemek kilistázása"""
-    if ctx.guild.id not in allowed_guilds:
-        return await ctx.send("❌ Ez a parancs csak engedélyezett szervereken érhető el.")
-
-    url = "https://fortnite-api.com/v2/cosmetics"
-    headers = {"Authorization": os.getenv("FORTNITE_API_KEY")}
-    await ctx.send("⏳ Lekérdezés folyamatban...")
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, timeout=15) as resp:
-                if resp.status != 200:
-                    return await ctx.send(f"⚠️ Fortnite API hiba: {resp.status}")
-                data = await resp.json()
-    except Exception as e:
-        return await ctx.send(f"⚠️ Hiba a Fortnite API hívás közben: {e}")
-
-    items = data.get("data", {}).get("daily", [])  # Új itemekhez a daily listát használjuk
-    if not items:
-        return await ctx.send("⚠️ Nem találtam új itemeket.")
-
-    msg = "**🆕 Új Fortnite itemek:**\n"
-    for i, item in enumerate(items, start=1):
-        name = item.get("name", "Ismeretlen")
-        rarity = item.get("rarity", {}).get("value", "ismeretlen")
-        line = f"{i}. {name} ({rarity})\n"
-
-        if len(msg) + len(line) > 1900:
-            await ctx.send(msg)
-            msg = ""
-        msg += line
-
-    if msg:
-        await ctx.send(msg)
-
-
-@bot.command(name="fnall")
-@admin_or_roles_or_users(
-    roles=["LightSector FN", "LightSector FN II"],
-    user_ids=[111111111111111111, 222222222222222222]
-)
-async def fnall(ctx):
-    """Teljes Fortnite shop/cosmetics lista"""
-    if ctx.guild.id not in allowed_guilds:
-        return await ctx.send("❌ Ez a parancs csak engedélyezett szervereken érhető el.")
-
-    url = "https://fortnite-api.com/v2/shop"
-    headers = {"Authorization": os.getenv("FORTNITE_API_KEY")}
-    await ctx.send("⏳ Lekérdezés folyamatban... Ez eltarthat pár másodpercig...")
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, timeout=60) as resp:
-                if resp.status != 200:
-                    return await ctx.send(f"⚠️ Fortnite API hiba: {resp.status}")
-                data = await resp.json()
-    except Exception as e:
-        return await ctx.send(f"⚠️ Hiba a Fortnite API hívás közben: {e}")
-
-    items = data.get("data", {}).get("featured", []) + data.get("data", {}).get("daily", [])
-    if not items:
-        return await ctx.send("⚠️ Nem sikerült lekérni a shop adatokat.")
-
-    msg = "**🛒 Teljes Fortnite shop/cosmetics lista:**\n"
-    for i, item in enumerate(items, start=1):
-        name = item.get("name", "Ismeretlen")
-        rarity = item.get("rarity", {}).get("value", "ismeretlen")
-        line = f"{i}. {name} ({rarity})\n"
-
-        if len(msg) + len(line) > 1900:
-            await ctx.send(msg)
-            msg = ""
-        msg += line
-
-    if msg:
-        await ctx.send(msg)
-
-
-
-
 # ------------------------
 # dbtwitch parancsok: add/remove/list (módosítják a twitch_streams.json fájlt)
 # most már több rang + user ID is engedélyezhet
@@ -979,7 +892,211 @@ if __name__ == "__main__":
 
 
 
+# ------------------------
+# YouTube streamerek betöltése / mentése (egyszerű párosítás)
+# ------------------------
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 
+YOUTUBE_FILE = "youtube_streams.json"
+YOUTUBE_INTERNAL_FILE = "youtube_streams_state.json"
 
+def load_youtube_channels():
+    if not os.path.exists(YOUTUBE_FILE):
+        return []
+    with open(YOUTUBE_FILE, "r", encoding="utf-8") as f:
+        try:
+            data = json.load(f)
+            if isinstance(data, list):
+                return data
+            return []
+        except json.JSONDecodeError:
+            return []
 
+def save_youtube_channels(list_obj):
+    with open(YOUTUBE_FILE, "w", encoding="utf-8") as f:
+        json.dump(list_obj, f, ensure_ascii=False, indent=4)
+    try:
+        with open(YOUTUBE_INTERNAL_FILE, "w", encoding="utf-8") as f:
+            json.dump(list_obj, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print(f"⚠️ Nem sikerült menteni {YOUTUBE_INTERNAL_FILE}: {e}")
 
+def build_youtube_state_from_file():
+    arr = load_youtube_channels()
+    state = {}
+    for item in arr:
+        try:
+            uname = item.get("username", "").lower()
+            cid = int(item.get("channel_id"))
+            gid = item.get("guild_id")
+            gid_val = None
+            if gid is None:
+                gid_val = None
+            else:
+                if isinstance(gid, str) and gid.isdigit():
+                    gid_val = int(gid)
+                elif isinstance(gid, int):
+                    gid_val = gid
+            if uname:
+                if gid_val not in state:
+                    state[gid_val] = {}
+                state[gid_val][uname] = {"channel_id": cid}
+        except Exception:
+            continue
+    return state
+
+youtube_channels = build_youtube_state_from_file()
+
+try:
+    if not os.path.exists(YOUTUBE_INTERNAL_FILE):
+        save_youtube_channels(load_youtube_channels())
+except Exception:
+    pass
+
+async def is_youtube_live_or_latest(username):
+    \"\"\"Visszaad: (live: bool, title: str, url: str)\"\"\"
+    if not YOUTUBE_API_KEY:
+        return False, None, None
+
+    # user channel azonosító
+    search_url = "https://www.googleapis.com/youtube/v3/channels"
+    params = {"part": "id,contentDetails,snippet", "forUsername": username, "key": YOUTUBE_API_KEY}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(search_url, params=params) as resp:
+            data = await resp.json()
+            items = data.get("items")
+            if not items:
+                return False, None, None
+            channel_id = items[0]["id"]
+
+    # élő adás lekérés
+    live_url = "https://www.googleapis.com/youtube/v3/search"
+    params = {"part": "snippet", "channelId": channel_id, "eventType": "live", "type": "video", "key": YOUTUBE_API_KEY}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(live_url, params=params) as resp:
+            data = await resp.json()
+            if data.get("items"):
+                vid = data["items"][0]["id"]["videoId"]
+                title = data["items"][0]["snippet"]["title"]
+                return True, title, f"https://youtube.com/watch?v={vid}"
+
+    # legfrissebb videó
+    latest_url = "https://www.googleapis.com/youtube/v3/search"
+    params = {"part": "snippet", "channelId": channel_id, "maxResults": 1, "order": "date", "type": "video", "key": YOUTUBE_API_KEY}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(latest_url, params=params) as resp:
+            data = await resp.json()
+            if data.get("items"):
+                vid = data["items"][0]["id"]["videoId"]
+                title = data["items"][0]["snippet"]["title"]
+                return False, title, f"https://youtube.com/watch?v={vid}"
+
+    return False, None, None
+
+# ------------------------
+# dbyoutube parancsok
+# ------------------------
+@bot.command(name="dbyoutubeadd")
+@admin_or_roles_or_users(
+    roles=["LightSector YT", "LightSector YT II"],
+    user_ids=[111111111111111111, 222222222222222222]
+)
+async def dbyoutubeadd(ctx, username: str, channel_id: int):
+    guild_id = ctx.guild.id if ctx.guild else None
+    arr = load_youtube_channels()
+    for item in arr:
+        if item.get("username", "").lower() == username.lower() and str(item.get("guild_id")) == str(guild_id):
+            item["channel_id"] = channel_id
+            save_youtube_channels(arr)
+            youtube_channels[guild_id][username.lower()] = {"channel_id": channel_id}
+            await ctx.send(f"🔧 Frissítve: **{username}** → <#{channel_id}>")
+            return
+    new_item = {"username": username.lower(), "channel_id": channel_id, "guild_id": guild_id}
+    arr.append(new_item)
+    save_youtube_channels(arr)
+    if guild_id not in youtube_channels:
+        youtube_channels[guild_id] = {}
+    youtube_channels[guild_id][username.lower()] = {"channel_id": channel_id}
+    await ctx.send(f"✅ YouTube figyelés hozzáadva: **{username}** → <#{channel_id}> (szerver: {guild_id})")
+
+@bot.command(name="dbyoutuberemove")
+@admin_or_roles_or_users(
+    roles=["LightSector YT", "LightSector YT II"],
+    user_ids=[111111111111111111, 222222222222222222]
+)
+async def dbyoutuberemove(ctx, username: str):
+    guild_id = ctx.guild.id if ctx.guild else None
+    arr = load_youtube_channels()
+    new_arr = []
+    removed = False
+    for item in arr:
+        if item.get("username", "").lower() == username.lower() and str(item.get("guild_id")) == str(guild_id):
+            removed = True
+            continue
+        new_arr.append(item)
+    if not removed:
+        return await ctx.send("⚠️ Nincs ilyen figyelt YouTube csatorna ebben a szerverben.")
+    save_youtube_channels(new_arr)
+    try:
+        if guild_id in youtube_channels and username.lower() in youtube_channels[guild_id]:
+            del youtube_channels[guild_id][username.lower()]
+            if not youtube_channels[guild_id]:
+                del youtube_channels[guild_id]
+    except Exception:
+        pass
+    await ctx.send(f"❌ YouTube figyelés törölve: **{username}** (szerver: {guild_id})")
+
+@bot.command(name="dbyoutubelist")
+@admin_or_roles_or_users(
+    roles=["LightSector YT", "LightSector YT II"],
+    user_ids=[111111111111111111, 222222222222222222]
+)
+async def dbyoutubelist(ctx):
+    arr = load_youtube_channels()
+    guild_entries = [item for item in arr if str(item.get("guild_id")) == str(ctx.guild.id)]
+    if not guild_entries:
+        return await ctx.send("ℹ️ Nincs figyelt YouTube csatorna ezen a szerveren.")
+    msg = "**Figyelt YouTube csatornák:**\n"
+    for item in guild_entries:
+        uname = item.get("username")
+        cid = item.get("channel_id")
+        msg += f"▶️ **{uname}** → <#{cid}>\n"
+    await ctx.send(msg)
+
+@bot.command(name="dbyoutube")
+@admin_or_roles_or_users(
+    roles=["LightSector YT", "LightSector YT II"],
+    user_ids=[111111111111111111, 222222222222222222]
+)
+async def dbyoutube(ctx, username: str):
+    if ctx.guild.id not in allowed_guilds:
+        return await ctx.send("❌ Ez a parancs csak engedélyezett szervereken érhető el.")
+    await ctx.send("⏳ Lekérdezés folyamatban...")
+    live, title, url = await is_youtube_live_or_latest(username)
+    embed = discord.Embed(
+        title=f"{username} YouTube csatornája",
+        url=f"https://youtube.com/{username}",
+        color=discord.Color.red()
+    )
+    if live:
+        embed.description = f"🔴 **ÉLŐ**: {title}\n{url}"
+    elif title:
+        embed.description = f"🆕 Legutóbbi videó: {title}\n{url}"
+    else:
+        embed.description = "⚪ Nincs tartalom."
+    await ctx.send(embed=embed)
+
+# ------------------------
+# Webserver kiegészítés: YouTube state
+# ------------------------
+async def get_youtube_state_json(request):
+    if not os.path.exists(YOUTUBE_INTERNAL_FILE):
+        return web.json_response([], status=200)
+    with open(YOUTUBE_INTERNAL_FILE, "r", encoding="utf-8") as f:
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError:
+            data = []
+    return web.json_response(data, status=200)
+
+app.router.add_get("/youtube_streams_state.json", get_youtube_state_json)
