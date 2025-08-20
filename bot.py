@@ -322,13 +322,9 @@ async def youtube_watcher():
                                 icon = "🔴" if live else "🆕"
 
                                 # 1️⃣ Szöveges blokk
-                                msg = (
-                                    f"{icon} **{username}** új tartalommal a YouTube-on!
-"
-                                    f"📝 {title}
-"
-                                    f"🔗 {url}"
-                                )
+                                msg = f"""{icon} **{username}** új tartalommal a YouTube-on!
+📝 {title}
+🔗 {url}"""
                                 await channel.send(msg)
 
                                 # 2️⃣ Embed panel (thumbnail + státusz)
