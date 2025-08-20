@@ -43,6 +43,7 @@ class MyBot(commands.Bot):
     async def setup_hook(self):
         # Indítsd itt aszinkron a watcher-t, így Render alatt nem lesz loop attribútum hiba
         self.loop.create_task(twitch_watcher())
+        self.loop.create_task(youtube_watcher())
         # Ha akarsz még egyéb initet (pl. cogs), ide jöhet
 
 bot = MyBot(command_prefix='!', intents=intents)
@@ -295,6 +296,51 @@ async def twitch_watcher():
             traceback.print_exc()
             await asyncio.sleep(60)
 
+
+
+# ------------------------
+# YouTube watcher (automatikus értesítések)
+# ------------------------
+async def youtube_watcher():
+    await bot.wait_until_ready()
+    print("🔁 YouTube watcher elindult.")
+    seen = {}  # guild_id -> username -> utolsó URL
+
+    while not bot.is_closed():
+        try:
+            for guild_id, users in list(youtube_channels.items()):
+                for username, info in list(users.items()):
+                    try:
+                        live, title, url = await is_youtube_live_or_latest(username)
+                        if not url:
+                            continue
+                        last_url = seen.get(guild_id, {}).get(username)
+                        if last_url != url:
+                            channel_id = info.get("channel_id")
+                            channel = bot.get_channel(channel_id)
+                            if channel:
+                                icon = "🔴" if live else "🆕"
+                                embed = discord.Embed(
+                                    title=f"{username} YouTube csatornája",
+                                    url=f"https://youtube.com/@{username}",
+                                    color=discord.Color.red()
+                                )
+                                if live:
+                                    embed.description = f"{icon} **ÉLŐ**: {title}\n{url}"
+                                else:
+                                    embed.description = f"{icon} Új videó: {title}\n{url}"
+                                try:
+                                    await channel.send(embed=embed)
+                                    print(f"➡️ YouTube értesítés: {username} -> {channel_id} (guild: {guild_id})")
+                                except Exception as e:
+                                    print(f"⚠️ Nem sikerült értesítést küldeni YouTube: {e}")
+                            seen.setdefault(guild_id, {})[username] = url
+                    except Exception as inner:
+                        print(f"[youtube_watcher belső hiba] {inner}")
+            await asyncio.sleep(120)  # 2 percenként ellenőrzés
+        except Exception as e:
+            print(f"[youtube_watcher főhiba] {e}")
+            await asyncio.sleep(120)
 
 # ------------------------
 # YouTube csatornák betöltése / mentése és állapot
