@@ -320,15 +320,32 @@ async def youtube_watcher():
                             channel = bot.get_channel(channel_id)
                             if channel:
                                 icon = "🔴" if live else "🆕"
+
+                                # 1️⃣ Szöveges blokk
+                                msg = (
+                                    f"{icon} **{username}** új tartalommal a YouTube-on!
+"
+                                    f"📝 {title}
+"
+                                    f"🔗 {url}"
+                                )
+                                await channel.send(msg)
+
+                                # 2️⃣ Embed panel (thumbnail + státusz)
                                 embed = discord.Embed(
                                     title=f"{username} YouTube csatornája",
                                     url=f"https://youtube.com/@{username}",
                                     color=discord.Color.red()
                                 )
                                 if live:
-                                    embed.description = f"{icon} **ÉLŐ**: {title}\n{url}"
+                                    embed.description = f"🔴 **ÉLŐ**: {title}"
                                 else:
-                                    embed.description = f"{icon} Új videó: {title}\n{url}"
+                                    embed.description = f"🆕 Új videó: {title}"
+
+                                if "watch?v=" in url:
+                                    vid_id = url.split("watch?v=")[-1]
+                                    embed.set_image(url=f"https://img.youtube.com/vi/{vid_id}/maxresdefault.jpg")
+
                                 try:
                                     await channel.send(embed=embed)
                                     print(f"➡️ YouTube értesítés: {username} -> {channel_id} (guild: {guild_id})")
@@ -337,6 +354,9 @@ async def youtube_watcher():
                             seen.setdefault(guild_id, {})[username] = url
                     except Exception as inner:
                         print(f"[youtube_watcher belső hiba] {inner}")
+            await asyncio.sleep(120)  # 2 percenként ellenőrzés
+        except Exception as e:
+            print(f"[youtube_watcher főhiba] {e}")
             await asyncio.sleep(120)  # 2 percenként ellenőrzés
         except Exception as e:
             print(f"[youtube_watcher főhiba] {e}")
