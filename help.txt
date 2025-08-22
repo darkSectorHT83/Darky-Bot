@@ -38,14 +38,6 @@ Youtube Alert (**):
 Youtube Info (***):
 !dbyoutube <youtube_név>                        - Egy adott streamer leinformálása (Admin/Rang/User)
 
-Kick Alert (**):
-!dbkickadd <kick_név> <dc_szoba_id>             - Kick streamer alert beállítása (Admin/Rang/User)
-!dbkickremove <kick_név>                        - Kick streamer alert törlése (Admin/Rang/User)
-!dbkicklist                                     - Párosított Kick alertek listája (Aktuális szerverre, Admin/Rang/User)
-
-Kick Info (***):
-!dbkick <kick_név>                              - Egy adott streamer leinformálása (Admin/Rang/User)
-
 Leírás:
 *     (Egy DC üzenethez egy vagy több emoji-t rendelsz amit megnyomva autómatikusan kapsz egy rangot.)
 **    (Egy DC szobához egy vagy több streamert rendelsz, akikről értesítést kapsz.)
