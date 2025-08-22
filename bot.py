@@ -1232,7 +1232,7 @@ async def kick_watcher():
             print(f"[kick_watcher főhiba] {e}")
             await asyncio.sleep(60)
 
-@bot.command(name=\"dbkickadd\")
+@bot.command(name="dbkickadd")
 @admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"], user_ids=[111111111111111111, 222222222222222222])
 async def dbkickadd(ctx, username: str, channel_id: int):
     username = username.lower().strip().lstrip('@').split('/')[-1]
@@ -1255,7 +1255,7 @@ async def dbkickadd(ctx, username: str, channel_id: int):
     kick_streams[guild_id][username] = {"channel_id": channel_id, "live": False}
     await ctx.send(f"✅ Kick figyelés hozzáadva: **{username}** → <#{channel_id}>")
 
-@bot.command(name=\"dbkickremove\")
+@bot.command(name="dbkickremove")
 @admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"], user_ids=[111111111111111111, 222222222222222222])
 async def dbkickremove(ctx, username: str):
     username = username.lower().strip().lstrip('@').split('/')[-1]
@@ -1280,7 +1280,7 @@ async def dbkickremove(ctx, username: str):
         pass
     await ctx.send(f"❌ Kick figyelés törölve: **{username}**")
 
-@bot.command(name=\"dbkicklist\")
+@bot.command(name="dbkicklist")
 @admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"], user_ids=[111111111111111111, 222222222222222222])
 async def dbkicklist(ctx):
     arr = load_kick_streamers()
@@ -1293,7 +1293,7 @@ async def dbkicklist(ctx):
         msg += f"▶️ **{item.get('username')}** → <#{item.get('channel_id')}>\n"
     await ctx.send(msg)
 
-@bot.command(name=\"dbkick\")
+@bot.command(name="dbkick")
 @admin_or_roles_or_users(roles=["LightSector KICK II", "LightSector III"], user_ids=[111111111111111111, 222222222222222222])
 async def dbkick(ctx, username: str):
     if not ctx.guild:
