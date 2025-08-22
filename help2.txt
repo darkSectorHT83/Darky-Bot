@@ -1,7 +1,16 @@
-Kick Alert (**):
-!dbkickadd <kick_név> <dc_szoba_id>             - Kick streamer alert beállítása (Admin/Rang/User)
-!dbkickremove <kick_név>                        - Kick streamer alert törlése (Admin/Rang/User)
-!dbkicklist                                     - Párosított Kick alertek listája (Aktuális szerverre, Admin/Rang/User)
+AKTÍVÁLÁS SZÜKSÉGES:
+********************
 
-Kick Info (***):
-!dbkick <kick_név>                              - Egy adott streamer leinformálása (Admin/Rang/User)
+Darky Bot parancslista:
+!dbhelp                                         - Darky Bot parancs lista (Admin/Rang/User)
+
+ChatGTP-4o AI (nem tárol üzenetet):
+!gpt <szöveg>                                   - ChatGPT Chatbot (Admin/Rang/User, adatbázis 2023.10.01)
+
+Gemini AI (nem tárol üzenetet):
+!gpt <szöveg>                                   - Gemini Chatbot (Admin/Rang/User, adatbázis 2023.10.01)
+
+Reaction Role (*):
+!addreaction <üzenet_id> <emoji> <rang neve>    - Reakció hozzáadása (Admin/Rang/User)
+!removereaction <üzenet_id> <emoji>             - Reakció eltávolítása (Admin/Rang/User)
+!listreactions                                  - Reakciók listázása (Aktuális szerverre, Admin/Rang/User)
