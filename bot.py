@@ -1110,17 +1110,16 @@ async def on_raw_reaction_remove(payload):
 # ------------------------
 @bot.command()
 async def dbhelp(ctx):
-    if not os.path.exists("help.txt"):
-        await ctx.send("⚠️ A help.txt fájl nem található.")
-        return
-    with open("help.txt", "r", encoding="utf-8") as f:
-        help_text = f.read()
-    if not help_text.strip():
-        await ctx.send("⚠️ A help.txt fájl üres.")
-        return
-    # Code blockba küldjük
-    await ctx.send(f"```{help_text}```")
-
+    try:
+        if not os.path.exists("help.txt"):
+            return await ctx.send("⚠️ A help.txt fájl nem található.")
+        with open("help.txt", "r", encoding="utf-8") as f:
+            help_text = f.read()
+        if not help_text.strip():
+            return await ctx.send("⚠️ A help.txt fájl üres.")
+        await ctx.send(f"```{help_text}```")
+    except Exception as e:
+        await ctx.send(f"⚠️ Hiba történt a help futtatásakor: {e}")
 @bot.command()
 async def dbactivate(ctx):
     if not os.path.exists(ACTIVATE_INFO_FILE):
@@ -1434,3 +1433,5 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
+
+
