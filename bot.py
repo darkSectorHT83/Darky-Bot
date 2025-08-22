@@ -44,7 +44,6 @@ class MyBot(commands.Bot):
         # Indítsd itt aszinkron a watcher-t, így Render alatt nem lesz loop attribútum hiba
         self.loop.create_task(twitch_watcher())
         self.loop.create_task(youtube_watcher())
-        self.loop.create_task(kick_watcher())
         # Ha akarsz még egyéb initet (pl. cogs), ide jöhet
 
 bot = MyBot(command_prefix='!', intents=intents)
@@ -320,10 +319,8 @@ async def youtube_watcher():
                             channel_id = info.get("channel_id")
                             channel = bot.get_channel(channel_id)
                             if channel:
-                                if not live:
-                                    continue
+                                icon = "🔴" if live else "🆕"
 
-                                icon = "🔴"
                                 # 1️⃣ Szöveges blokk
                                 msg = f"""{icon} **{username}** új tartalommal a YouTube-on!
 📝 {title}
@@ -339,7 +336,7 @@ async def youtube_watcher():
                                 if live:
                                     embed.description = f"🔴 **ÉLŐ**: {title}"
                                 else:
-                                    continue
+                                    embed.description = f"🆕 Új videó: {title}"
 
                                 if "watch?v=" in url:
                                     vid_id = url.split("watch?v=")[-1]
@@ -668,7 +665,7 @@ async def gptpic(ctx, *, prompt: str):
     roles=["LightSector TWITCH", "LightSector II"],
     user_ids=[111111111111111111, 222222222222222222]
 )
-async def dbtwitchadd(ctx, channel_id: int, username: str):
+async def dbtwitchadd(ctx, username: str, channel_id: int):
     """!dbtwitchadd <twitch_username> <discord_channel_id>"""
     username = username.lower().strip().lstrip('@').split('/')[-1]
     guild_id = ctx.guild.id if ctx.guild else None
@@ -1133,184 +1130,6 @@ async def dbactivate(ctx):
         return
     await ctx.send(content)
 
-# ========================
-# KICK FUNKCIÓK
-# ========================
-
-# Fájlnevek bővítéshez (ha fentebb nincsenek)
-KICK_FILE = "kick_streams.json"
-KICK_INTERNAL_FILE = "kick_streams_state.json"
-
-def load_kick_streamers():
-    if not os.path.exists(KICK_FILE):
-        return []
-    with open(KICK_FILE, "r", encoding="utf-8") as f:
-        try:
-            data = json.load(f)
-            if isinstance(data, list):
-                return data
-            return []
-        except json.JSONDecodeError:
-            return []
-
-def save_kick_streamers(list_obj):
-    with open(KICK_FILE, "w", encoding="utf-8") as f:
-        json.dump(list_obj, f, ensure_ascii=False, indent=4)
-    try:
-        with open(KICK_INTERNAL_FILE, "w", encoding="utf-8") as f:
-            json.dump(list_obj, f, ensure_ascii=False, indent=4)
-    except Exception as e:
-        print(f"⚠️ Nem sikerült menteni {KICK_INTERNAL_FILE}: {e}")
-
-def build_kick_state_from_file():
-    arr = load_kick_streamers()
-    state = {}
-    for item in arr:
-        try:
-            uname = item.get("username", "").lower()
-            cid = int(item.get("channel_id"))
-            gid = item.get("guild_id")
-            gid_val = int(gid) if gid and str(gid).isdigit() else None
-            if uname:
-                if gid_val not in state:
-                    state[gid_val] = {}
-                state[gid_val][uname] = {"channel_id": cid, "live": False}
-        except Exception:
-            continue
-    return state
-
-kick_streams = build_kick_state_from_file()
-try:
-    if not os.path.exists(KICK_INTERNAL_FILE):
-        save_kick_streamers(load_kick_streamers())
-except Exception:
-    pass
-
-async def is_kick_live(username):
-    url = f"https://kick.com/api/v2/channels/{username}"
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=15) as resp:
-                if resp.status != 200:
-                    return False, None
-                data = await resp.json()
-                if data.get("livestream"):
-                    return True, data["livestream"]
-                return False, None
-    except Exception as e:
-        print(f"[Kick API hiba] {e}")
-        return False, None
-
-async def kick_watcher():
-    await bot.wait_until_ready()
-    print("🔁 Kick watcher elindult.")
-    global kick_streams
-    kick_streams = build_kick_state_from_file()
-
-    while not bot.is_closed():
-        try:
-            for guild_id, users in list(kick_streams.items()):
-                for username, info in list(users.items()):
-                    try:
-                        live, stream_data = await is_kick_live(username)
-                        if live and not info.get("live", False):
-                            channel_id = info.get("channel_id")
-                            channel = bot.get_channel(channel_id)
-                            if channel:
-                                title = stream_data.get("session_title", "Ismeretlen cím")
-                                msg = (
-                                    f"🎥 **{username}** élőben van a Kick-en!\n"
-                                    f"📝 {title}\n"
-                                    f"🔗 https://kick.com/{username}"
-                                )
-                                await channel.send(msg)
-                            kick_streams[guild_id][username]["live"] = True
-                        elif not live and info.get("live", False):
-                            kick_streams[guild_id][username]["live"] = False
-                    except Exception as inner:
-                        print(f"[kick_watcher hiba] {inner}")
-            await asyncio.sleep(60)
-        except Exception as e:
-            print(f"[kick_watcher főhiba] {e}")
-            await asyncio.sleep(60)
-
-@bot.command(name="dbkickadd")
-@admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"], user_ids=[111111111111111111, 222222222222222222])
-async def dbkickadd(ctx, channel_id: int, username: str):
-    username = username.lower().strip().lstrip('@').split('/')[-1]
-    guild_id = ctx.guild.id if ctx.guild else None
-    arr = load_kick_streamers()
-    for item in arr:
-        if item.get("username", "").lower() == username and str(item.get("guild_id")) == str(guild_id):
-            item["channel_id"] = channel_id
-            save_kick_streamers(arr)
-            if guild_id not in kick_streams:
-                kick_streams[guild_id] = {}
-            kick_streams[guild_id][username] = {"channel_id": channel_id, "live": False}
-            await ctx.send(f"🔧 Frissítve: **{username}** → <#{channel_id}>")
-            return
-    new_item = {"username": username, "channel_id": channel_id, "guild_id": guild_id}
-    arr.append(new_item)
-    save_kick_streamers(arr)
-    if guild_id not in kick_streams:
-        kick_streams[guild_id] = {}
-    kick_streams[guild_id][username] = {"channel_id": channel_id, "live": False}
-    await ctx.send(f"✅ Kick figyelés hozzáadva: **{username}** → <#{channel_id}>")
-
-@bot.command(name="dbkickremove")
-@admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"], user_ids=[111111111111111111, 222222222222222222])
-async def dbkickremove(ctx, username: str):
-    username = username.lower().strip().lstrip('@').split('/')[-1]
-    guild_id = ctx.guild.id if ctx.guild else None
-    arr = load_kick_streamers()
-    new_arr, removed = [], False
-    for item in arr:
-        if item.get("username", "").lower() == username and str(item.get("guild_id")) == str(guild_id):
-            removed = True
-            continue
-        new_arr.append(item)
-    if not removed:
-        await ctx.send("⚠️ Nincs ilyen figyelt Kick csatorna ezen a szerveren.")
-        return
-    save_kick_streamers(new_arr)
-    try:
-        if guild_id in kick_streams and username in kick_streams[guild_id]:
-            del kick_streams[guild_id][username]
-            if not kick_streams[guild_id]:
-                del kick_streams[guild_id]
-    except Exception:
-        pass
-    await ctx.send(f"❌ Kick figyelés törölve: **{username}**")
-
-@bot.command(name="dbkicklist")
-@admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"], user_ids=[111111111111111111, 222222222222222222])
-async def dbkicklist(ctx):
-    arr = load_kick_streamers()
-    guild_entries = [item for item in arr if str(item.get("guild_id")) == str(ctx.guild.id)]
-    if not guild_entries:
-        await ctx.send("ℹ️ Nincs figyelt Kick csatorna ezen a szerveren.")
-        return
-    msg = "**Figyelt Kick csatornák:**\n"
-    for item in guild_entries:
-        msg += f"▶️ **{item.get('username')}** → <#{item.get('channel_id')}>\n"
-    await ctx.send(msg)
-
-@bot.command(name="dbkick")
-@admin_or_roles_or_users(roles=["LightSector KICK II", "LightSector III"], user_ids=[111111111111111111, 222222222222222222])
-async def dbkick(ctx, username: str):
-    if not ctx.guild:
-        return await ctx.send("❌ Csak szerveren használható.")
-    uname = username.strip().lstrip('@').split('/')[-1]
-    await ctx.send(f"```Kick lekérdezés: {uname}```")
-    live, data = await is_kick_live(uname)
-    embed = discord.Embed(title=f"{uname} Kick csatornája", url=f"https://kick.com/{uname}", color=discord.Color.green())
-    if live:
-        embed.description = f"🔴 **ÉLŐ**: {data.get('session_title', 'Nincs cím')}\nhttps://kick.com/{uname}"
-    else:
-        embed.description = "⚪ Jelenleg offline."
-    await ctx.send(embed=embed)
-
-
 # ------------------------
 # Web szerver (egyszerű status + reaction_roles.json + twitch state endpoint)
 # ------------------------
@@ -1384,23 +1203,12 @@ async def get_youtube_state_json(request):
             data = []
     return web.json_response(data, status=200)
 
-async def get_kick_state_json(request):
-    if not os.path.exists(KICK_INTERNAL_FILE):
-        return web.json_response([], status=200)
-    with open(KICK_INTERNAL_FILE, "r", encoding="utf-8") as f:
-        try:
-            data = json.load(f)
-        except json.JSONDecodeError:
-            data = []
-    return web.json_response(data, status=200)
-
 
 app = web.Application()
 app.router.add_get("/", handle)
 app.router.add_get("/reaction_roles.json", get_json)
 app.router.add_get("/twitch_streams_state.json", get_twitch_state_json)
 app.router.add_get("/youtube_streams_state.json", get_youtube_state_json)
-app.router.add_get("/kick_streams_state.json", get_kick_state_json)
 
 async def start_webserver():
     runner = web.AppRunner(app)
@@ -1434,8 +1242,5 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
-
-
-
 
 
