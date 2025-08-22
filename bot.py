@@ -1111,13 +1111,18 @@ async def on_raw_reaction_remove(payload):
 @bot.command()
 async def dbhelp(ctx):
     try:
-        if not os.path.exists("help.txt"):
-            return await ctx.send("⚠️ A help.txt fájl nem található.")
-        with open("help.txt", "r", encoding="utf-8") as f:
-            help_text = f.read()
-        if not help_text.strip():
-            return await ctx.send("⚠️ A help.txt fájl üres.")
-        await ctx.send(f"```{help_text}```")
+        for i in range(1, 11):  # help1.txt .. help10.txt
+            filename = f"help{i}.txt" if i > 1 else "help.txt"
+            if not os.path.exists(filename):
+                continue
+            with open(filename, "r", encoding="utf-8") as f:
+                help_text = f.read()
+            if not help_text.strip():
+                continue
+            # darabolás biztonság kedvéért
+            chunks = [help_text[j:j+1990] for j in range(0, len(help_text), 1990)]
+            for chunk in chunks:
+                await ctx.send(f"```{chunk}```")
     except Exception as e:
         await ctx.send(f"⚠️ Hiba történt a help futtatásakor: {e}")
 @bot.command()
@@ -1433,5 +1438,3 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
-
-
