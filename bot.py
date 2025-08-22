@@ -320,8 +320,10 @@ async def youtube_watcher():
                             channel_id = info.get("channel_id")
                             channel = bot.get_channel(channel_id)
                             if channel:
-                                icon = "🔴" if live else "🆕"
+                                if not live:
+                                    continue
 
+                                icon = "🔴"
                                 # 1️⃣ Szöveges blokk
                                 msg = f"""{icon} **{username}** új tartalommal a YouTube-on!
 📝 {title}
@@ -337,7 +339,7 @@ async def youtube_watcher():
                                 if live:
                                     embed.description = f"🔴 **ÉLŐ**: {title}"
                                 else:
-                                    embed.description = f"🆕 Új videó: {title}"
+                                    continue
 
                                 if "watch?v=" in url:
                                     vid_id = url.split("watch?v=")[-1]
