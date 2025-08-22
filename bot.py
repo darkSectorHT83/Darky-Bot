@@ -1186,22 +1186,37 @@ try:
 except Exception:
     pass
 
+
 async def is_kick_live(username):
     url = f"https://kick.com/api/v2/channels/{username}"
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=15) as resp:
+                print("[Kick API] státusz:", resp.status)
                 if resp.status != 200:
+                    text = await resp.text()
+                    print("[Kick API] Nem 200 válasz:", text)
                     return False, None
+
                 data = await resp.json()
+                print("[Kick API] válasz:", data)  # <- Debug kiíratás
+
+                # 1️⃣ Ha van livestream objektum
                 if data.get("livestream"):
                     return True, data["livestream"]
+
+                # 2️⃣ Ha van is_live mező és true
+                if data.get("is_live") is True:
+                    return True, {"session_title": data.get("session_title", "Élő adás")}
+
+                # 3️⃣ Egyébként offline
                 return False, None
     except Exception as e:
         print(f"[Kick API hiba] {e}")
         return False, None
 
-async def kick_watcher():
+
+def kick_watcher():
     await bot.wait_until_ready()
     print("🔁 Kick watcher elindult.")
     global kick_streams
@@ -1434,8 +1449,3 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
-
-
-
-
-
