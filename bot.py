@@ -1167,7 +1167,7 @@ def build_kick_state_from_file():
     state = {}
     for item in arr:
         try:
-            uname = item.get("username", "").lower()
+            uname = (item.get("username") or "").lower()
             cid = int(item.get("channel_id"))
             gid = item.get("guild_id")
             gid_val = int(gid) if gid and str(gid).isdigit() else None
@@ -1179,6 +1179,7 @@ def build_kick_state_from_file():
             continue
     return state
 
+# runtime állapot
 kick_streams = build_kick_state_from_file()
 try:
     if not os.path.exists(KICK_INTERNAL_FILE):
@@ -1186,21 +1187,29 @@ try:
 except Exception:
     pass
 
-
-
-
-async def is_kick_live(username):
+async def is_kick_live(username: str):
+    """Kick csatorna állapot lekérése.
+    Visszatér: (live: bool, stream_data: dict|None)
+    """
+    url = f"https://kick.com/api/v2/channels/{username}"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=15) as resp:
+                print("[Kick API] státusz:", resp.status)
+                if resp.status != 200:
+                    text = await resp.text()
+                    print("[Kick API] Nem 200 válasz:", text)
                     return False, None
 
                 data = await resp.json()
-                print("[Kick API] válasz:", data)  # <- Debug kiíratás
+                print("[Kick API] válasz:", data)
 
                 # 1️⃣ Ha van livestream objektum
-                if data.get("livestream"):
+                if isinstance(data, dict) and data.get("livestream"):
                     return True, data["livestream"]
 
                 # 2️⃣ Ha van is_live mező és true
-                if data.get("is_live") is True:
+                if isinstance(data, dict) and data.get("is_live") is True:
                     return True, {"session_title": data.get("session_title", "Élő adás")}
 
                 # 3️⃣ Egyébként offline
@@ -1208,43 +1217,6 @@ async def is_kick_live(username):
     except Exception as e:
         print(f"[Kick API hiba] {e}")
         return False, None
-
-
-                data = await resp.json()
-                print("[Kick API] válasz:", data)  # <- Debug kiíratás
-
-                # 1️⃣ Ha van livestream objektum
-                if data.get("livestream"):
-                    return True, data["livestream"]
-
-                # 2️⃣ Ha van is_live mező és true
-                if data.get("is_live") is True:
-                    return True, {"session_title": data.get("session_title", "Élő adás")}
-
-                # 3️⃣ Egyébként offline
-                return False, None
-    except Exception as e:
-        print(f"[Kick API hiba] {e}")
-        return False, None
-
-
-                data = await resp.json()
-                print("[Kick API] válasz:", data)  # <- Debug kiíratás
-
-                # 1️⃣ Ha van livestream objektum
-                if data.get("livestream"):
-                    return True, data["livestream"]
-
-                # 2️⃣ Ha van is_live mező és true
-                if data.get("is_live") is True:
-                    return True, {"session_title": data.get("session_title", "Élő adás")}
-
-                # 3️⃣ Egyébként offline
-                return False, None
-    except Exception as e:
-        print(f"[Kick API hiba] {e}")
-        return False, None
-
 
 async def kick_watcher():
     await bot.wait_until_ready()
@@ -1262,13 +1234,16 @@ async def kick_watcher():
                             channel_id = info.get("channel_id")
                             channel = bot.get_channel(channel_id)
                             if channel:
-                                title = stream_data.get("session_title", "Ismeretlen cím")
+                                title = (stream_data or {}).get("session_title", "Ismeretlen cím")
                                 msg = (
                                     f"🎥 **{username}** élőben van a Kick-en!\n"
                                     f"📝 {title}\n"
                                     f"🔗 https://kick.com/{username}"
                                 )
-                                await channel.send(msg)
+                                try:
+                                    await channel.send(msg)
+                                except Exception as send_err:
+                                    print(f"⚠️ Kick üzenetküldési hiba: {send_err}")
                             kick_streams[guild_id][username]["live"] = True
                         elif not live and info.get("live", False):
                             kick_streams[guild_id][username]["live"] = False
@@ -1286,7 +1261,7 @@ async def dbkickadd(ctx, channel_id: int, username: str):
     guild_id = ctx.guild.id if ctx.guild else None
     arr = load_kick_streamers()
     for item in arr:
-        if item.get("username", "").lower() == username and str(item.get("guild_id")) == str(guild_id):
+        if (item.get("username","").lower() == username) and (str(item.get("guild_id")) == str(guild_id)):
             item["channel_id"] = channel_id
             save_kick_streamers(arr)
             if guild_id not in kick_streams:
@@ -1310,7 +1285,7 @@ async def dbkickremove(ctx, username: str):
     arr = load_kick_streamers()
     new_arr, removed = [], False
     for item in arr:
-        if item.get("username", "").lower() == username and str(item.get("guild_id")) == str(guild_id):
+        if (item.get("username","").lower() == username) and (str(item.get("guild_id")) == str(guild_id)):
             removed = True
             continue
         new_arr.append(item)
@@ -1350,12 +1325,10 @@ async def dbkick(ctx, username: str):
     live, data = await is_kick_live(uname)
     embed = discord.Embed(title=f"{uname} Kick csatornája", url=f"https://kick.com/{uname}", color=discord.Color.green())
     if live:
-        embed.description = f"🔴 **ÉLŐ**: {data.get('session_title', 'Nincs cím')}\nhttps://kick.com/{uname}"
+        embed.description = f"🔴 **ÉLŐ**: {(data or {}).get('session_title', 'Nincs cím')}\nhttps://kick.com/{uname}"
     else:
         embed.description = "⚪ Jelenleg offline."
     await ctx.send(embed=embed)
-
-
 # ------------------------
 # Web szerver (egyszerű status + reaction_roles.json + twitch state endpoint)
 # ------------------------
@@ -1479,5 +1452,8 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
+
+
+
 
 
