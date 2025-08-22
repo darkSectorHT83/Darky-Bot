@@ -1,0 +1,4 @@
+Leírás:
+*     (Egy DC üzenethez egy vagy több emoji-t rendelsz amit megnyomva autómatikusan kapsz egy rangot.)
+**    (Egy DC szobához egy vagy több streamert rendelsz, akikről értesítést kapsz.)
+***   (Streamer ellenőrzés, ami jelzi az aktuális státuszt.)
