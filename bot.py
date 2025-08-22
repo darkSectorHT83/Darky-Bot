@@ -668,7 +668,7 @@ async def gptpic(ctx, *, prompt: str):
     roles=["LightSector TWITCH", "LightSector II"],
     user_ids=[111111111111111111, 222222222222222222]
 )
-async def dbtwitchadd(ctx, username: str, channel_id: int):
+async def dbtwitchadd(ctx, channel_id: int, username: str):
     """!dbtwitchadd <twitch_username> <discord_channel_id>"""
     username = username.lower().strip().lstrip('@').split('/')[-1]
     guild_id = ctx.guild.id if ctx.guild else None
@@ -1236,7 +1236,7 @@ async def kick_watcher():
 
 @bot.command(name="dbkickadd")
 @admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"], user_ids=[111111111111111111, 222222222222222222])
-async def dbkickadd(ctx, username: str, channel_id: int):
+async def dbkickadd(ctx, channel_id: int, username: str):
     username = username.lower().strip().lstrip('@').split('/')[-1]
     guild_id = ctx.guild.id if ctx.guild else None
     arr = load_kick_streamers()
