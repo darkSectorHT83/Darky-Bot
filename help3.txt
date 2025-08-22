@@ -1,0 +1,7 @@
+Twitch Alert (**):
+!dbtwitchadd <twitch_név> <dc_szoba_id>         - Twitch streamer alert beállítása (Admin/Rang/User)
+!dbtwitchremove <twitch_név>                    - Twitch streamer alert törlése (Admin/Rang/User)
+!dbtwitchlist                                   - Párosított twitch alertek listája (Aktuális szerverre, Admin/Rang/User)
+
+Twitch Info (***):
+!dbtwitch <twitch_név>                          - Egy adott streamer leinformálása (Admin/Rang/User)
