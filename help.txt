@@ -30,13 +30,6 @@ Twitch Alert (**):
 Twitch Info (***):
 !dbtwitch <twitch_név>                          - Egy adott streamer leinformálása (Admin/Rang/User)
 
-Youtube Alert (**):
-!dbyoutubeadd <youtube_név> <dc_szoba_id>       - Youtube streamer alert beállítása (Admin/Rang/User)
-!dbyoutuberemove <youtube_név>                  - Youtube streamer alert törlése (Admin/Rang/User)
-!dbyoutubelist                                  - Párosított Youtube alertek listája (Aktuális szerverre, Admin/Rang/User)
-
-Youtube Info (***):
-!dbyoutube <youtube_név>                        - Egy adott streamer leinformálása (Admin/Rang/User)
 
 Leírás:
 *     (Egy DC üzenethez egy vagy több emoji-t rendelsz amit megnyomva autómatikusan kapsz egy rangot.)
