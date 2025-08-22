@@ -1,0 +1,7 @@
+Youtube Alert (**):
+!dbyoutubeadd <youtube_név> <dc_szoba_id>       - Youtube streamer alert beállítása (Admin/Rang/User)
+!dbyoutuberemove <youtube_név>                  - Youtube streamer alert törlése (Admin/Rang/User)
+!dbyoutubelist                                  - Párosított Youtube alertek listája (Aktuális szerverre, Admin/Rang/User)
+
+Youtube Info (***):
+!dbyoutube <youtube_név>                        - Egy adott streamer leinformálása (Admin/Rang/User)
