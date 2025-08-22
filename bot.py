@@ -44,6 +44,7 @@ class MyBot(commands.Bot):
         # Indítsd itt aszinkron a watcher-t, így Render alatt nem lesz loop attribútum hiba
         self.loop.create_task(twitch_watcher())
         self.loop.create_task(youtube_watcher())
+        self.loop.create_task(kick_watcher())
         # Ha akarsz még egyéb initet (pl. cogs), ide jöhet
 
 bot = MyBot(command_prefix='!', intents=intents)
@@ -1130,123 +1131,6 @@ async def dbactivate(ctx):
         return
     await ctx.send(content)
 
-# ------------------------
-# Web szerver (egyszerű status + reaction_roles.json + twitch state endpoint)
-# ------------------------
-async def handle(request):
-    html_content = f"""
-    <html>
-    <head>
-        <title>Darky Bot Status</title>
-        <style>
-            body {{
-                background-color: transparent;
-                text-align: center;
-                margin-top: 50px;
-            }}
-            .container {{
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                gap: 20px;
-            }}
-            .status-text {{
-                font-size: 80px;
-                font-weight: bold;
-                color: white;
-                text-shadow: 2px 2px 5px black;
-            }}
-            .status-image {{
-                width: 128px;
-                height: 128px;
-                opacity: {TRANSPARENCY / 100};
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <img class="status-image" src="https://kephost.net/p/MjAzODQ3OQ.png" alt="Bot Icon">
-            <div class="status-text">Darky Bot: ONLINE</div>
-        </div>
-    </body>
-    </html>
-    """
-    return web.Response(text=html_content, content_type='text/html')
-
-async def get_json(request):
-    if not os.path.exists(REACTION_ROLES_FILE):
-        return web.json_response({}, status=200, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=4))
-    with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
-        try:
-            data = json.load(f)
-        except json.JSONDecodeError:
-            data = {}
-    return web.json_response(data, status=200, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=4))
-
-async def get_twitch_state_json(request):
-    if not os.path.exists(TWITCH_INTERNAL_FILE):
-        return web.json_response([], status=200)
-    with open(TWITCH_INTERNAL_FILE, "r", encoding="utf-8") as f:
-        try:
-            data = json.load(f)
-        except json.JSONDecodeError:
-            data = []
-    return web.json_response(data, status=200)
-
-async def get_youtube_state_json(request):
-    if not os.path.exists(YOUTUBE_INTERNAL_FILE):
-        return web.json_response([], status=200)
-    with open(YOUTUBE_INTERNAL_FILE, "r", encoding="utf-8") as f:
-        try:
-            data = json.load(f)
-        except json.JSONDecodeError:
-            data = []
-    return web.json_response(data, status=200)
-
-
-app = web.Application()
-app.router.add_get("/", handle)
-app.router.add_get("/reaction_roles.json", get_json)
-app.router.add_get("/twitch_streams_state.json", get_twitch_state_json)
-app.router.add_get("/youtube_streams_state.json", get_youtube_state_json)
-
-async def start_webserver():
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 8080)
-    await site.start()
-    print("🌐 Webserver elindítva: http://0.0.0.0:8080/")
-
-# ------------------------
-# Main indítás (Render kompatibilis)
-# ------------------------
-async def main():
-    print("✅ Bot indítás folyamatban...")
-    print("DISCORD_TOKEN:", "✅ beállítva" if DISCORD_TOKEN else "❌ HIÁNYZIK")
-    # web szerver indítása
-    try:
-        await start_webserver()
-    except Exception as e:
-        print(f"⚠️ Hiba a webserver indításakor: {e}")
-    # A bot elindítása (setup_hook fogja elindítani a twitch_watcher-t)
-    try:
-        await bot.start(DISCORD_TOKEN)
-    except Exception as e:
-        print(f"❌ Hiba a bot indításakor: {e}")
-
-if __name__ == "__main__":
-    # futtatás asyncio.run-nal -> elkerüljük a loop attribute hibát Renderen
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("🔌 Leállítás kézi megszakítással.")
-    except Exception as e:
-        print(f"❌ Fő hibakör: {e}")
-
-
-
-
-
 # ========================
 # KICK FUNKCIÓK
 # ========================
@@ -1348,8 +1232,8 @@ async def kick_watcher():
             print(f"[kick_watcher főhiba] {e}")
             await asyncio.sleep(60)
 
-@bot.command(name="dbkickadd")
-@admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"])
+@bot.command(name=\"dbkickadd\")
+@admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"], user_ids=[111111111111111111, 222222222222222222])
 async def dbkickadd(ctx, username: str, channel_id: int):
     username = username.lower().strip().lstrip('@').split('/')[-1]
     guild_id = ctx.guild.id if ctx.guild else None
@@ -1371,8 +1255,8 @@ async def dbkickadd(ctx, username: str, channel_id: int):
     kick_streams[guild_id][username] = {"channel_id": channel_id, "live": False}
     await ctx.send(f"✅ Kick figyelés hozzáadva: **{username}** → <#{channel_id}>")
 
-@bot.command(name="dbkickremove")
-@admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"])
+@bot.command(name=\"dbkickremove\")
+@admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"], user_ids=[111111111111111111, 222222222222222222])
 async def dbkickremove(ctx, username: str):
     username = username.lower().strip().lstrip('@').split('/')[-1]
     guild_id = ctx.guild.id if ctx.guild else None
@@ -1396,8 +1280,8 @@ async def dbkickremove(ctx, username: str):
         pass
     await ctx.send(f"❌ Kick figyelés törölve: **{username}**")
 
-@bot.command(name="dbkicklist")
-@admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"])
+@bot.command(name=\"dbkicklist\")
+@admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"], user_ids=[111111111111111111, 222222222222222222])
 async def dbkicklist(ctx):
     arr = load_kick_streamers()
     guild_entries = [item for item in arr if str(item.get("guild_id")) == str(ctx.guild.id)]
@@ -1409,8 +1293,8 @@ async def dbkicklist(ctx):
         msg += f"▶️ **{item.get('username')}** → <#{item.get('channel_id')}>\n"
     await ctx.send(msg)
 
-@bot.command(name="dbkick")
-@admin_or_roles_or_users(roles=["LightSector KICK II", "LightSector III"])
+@bot.command(name=\"dbkick\")
+@admin_or_roles_or_users(roles=["LightSector KICK II", "LightSector III"], user_ids=[111111111111111111, 222222222222222222])
 async def dbkick(ctx, username: str):
     if not ctx.guild:
         return await ctx.send("❌ Csak szerveren használható.")
@@ -1423,3 +1307,133 @@ async def dbkick(ctx, username: str):
     else:
         embed.description = "⚪ Jelenleg offline."
     await ctx.send(embed=embed)
+
+
+# ------------------------
+# Web szerver (egyszerű status + reaction_roles.json + twitch state endpoint)
+# ------------------------
+async def handle(request):
+    html_content = f"""
+    <html>
+    <head>
+        <title>Darky Bot Status</title>
+        <style>
+            body {{
+                background-color: transparent;
+                text-align: center;
+                margin-top: 50px;
+            }}
+            .container {{
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                gap: 20px;
+            }}
+            .status-text {{
+                font-size: 80px;
+                font-weight: bold;
+                color: white;
+                text-shadow: 2px 2px 5px black;
+            }}
+            .status-image {{
+                width: 128px;
+                height: 128px;
+                opacity: {TRANSPARENCY / 100};
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <img class="status-image" src="https://kephost.net/p/MjAzODQ3OQ.png" alt="Bot Icon">
+            <div class="status-text">Darky Bot: ONLINE</div>
+        </div>
+    </body>
+    </html>
+    """
+    return web.Response(text=html_content, content_type='text/html')
+
+async def get_json(request):
+    if not os.path.exists(REACTION_ROLES_FILE):
+        return web.json_response({}, status=200, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=4))
+    with open(REACTION_ROLES_FILE, "r", encoding="utf-8") as f:
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError:
+            data = {}
+    return web.json_response(data, status=200, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=4))
+
+async def get_twitch_state_json(request):
+    if not os.path.exists(TWITCH_INTERNAL_FILE):
+        return web.json_response([], status=200)
+    with open(TWITCH_INTERNAL_FILE, "r", encoding="utf-8") as f:
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError:
+            data = []
+    return web.json_response(data, status=200)
+
+async def get_youtube_state_json(request):
+    if not os.path.exists(YOUTUBE_INTERNAL_FILE):
+        return web.json_response([], status=200)
+    with open(YOUTUBE_INTERNAL_FILE, "r", encoding="utf-8") as f:
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError:
+            data = []
+    return web.json_response(data, status=200)
+
+async def get_kick_state_json(request):
+    if not os.path.exists(KICK_INTERNAL_FILE):
+        return web.json_response([], status=200)
+    with open(KICK_INTERNAL_FILE, "r", encoding="utf-8") as f:
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError:
+            data = []
+    return web.json_response(data, status=200)
+
+
+app = web.Application()
+app.router.add_get("/", handle)
+app.router.add_get("/reaction_roles.json", get_json)
+app.router.add_get("/twitch_streams_state.json", get_twitch_state_json)
+app.router.add_get("/youtube_streams_state.json", get_youtube_state_json)
+app.router.add_get("/kick_streams_state.json", get_kick_state_json)
+
+async def start_webserver():
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 8080)
+    await site.start()
+    print("🌐 Webserver elindítva: http://0.0.0.0:8080/")
+
+# ------------------------
+# Main indítás (Render kompatibilis)
+# ------------------------
+async def main():
+    print("✅ Bot indítás folyamatban...")
+    print("DISCORD_TOKEN:", "✅ beállítva" if DISCORD_TOKEN else "❌ HIÁNYZIK")
+    # web szerver indítása
+    try:
+        await start_webserver()
+    except Exception as e:
+        print(f"⚠️ Hiba a webserver indításakor: {e}")
+    # A bot elindítása (setup_hook fogja elindítani a twitch_watcher-t)
+    try:
+        await bot.start(DISCORD_TOKEN)
+    except Exception as e:
+        print(f"❌ Hiba a bot indításakor: {e}")
+
+if __name__ == "__main__":
+    # futtatás asyncio.run-nal -> elkerüljük a loop attribute hibát Renderen
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("🔌 Leállítás kézi megszakítással.")
+    except Exception as e:
+        print(f"❌ Fő hibakör: {e}")
+
+
+
+
+
