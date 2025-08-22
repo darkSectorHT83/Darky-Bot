@@ -1,0 +1,7 @@
+Kick Alert (**):
+!dbkickadd <kick_név> <dc_szoba_id>             - Kick streamer alert beállítása (Admin/Rang/User)
+!dbkickremove <kick_név>                        - Kick streamer alert törlése (Admin/Rang/User)
+!dbkicklist                                     - Párosított Kick alertek listája (Aktuális szerverre, Admin/Rang/User)
+
+Kick Info (***):
+!dbkick <kick_név>                              - Egy adott streamer leinformálása (Admin/Rang/User)
