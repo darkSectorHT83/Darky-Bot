@@ -39,52 +39,11 @@ intents.reactions = True
 intents.guilds = True
 intents.members = True
 
-async def youtube_rss_watcher():
-    await bot.wait_until_ready()
-    print("🔁 YouTube RSS watcher elindult (feed+watch módszer).")
-    seen = {}
-    while not bot.is_closed():
-        try:
-            for guild_id, users in list(youtube_channels.items()):
-                for username, info in list(users.items()):
-                    try:
-                        live, title, url = await is_youtube_live_rss(username)
-                        if not (live and url):
-                            continue
-                        last_url = seen.get(guild_id, {}).get(username)
-                        if last_url == url:
-                            continue
-                        channel_id = info.get("channel_id")
-                        channel = bot.get_channel(channel_id)
-                        if channel:
-                            msg = f"🔴 **{username}** élőben van a YouTube-on!\n📝 {title}\n🔗 {url}"
-                            await channel.send(msg)
-                            embed = discord.Embed(
-                                title=f"{username} YouTube csatornája",
-                                url=f"https://youtube.com/@{username}",
-                                color=discord.Color.red()
-                            )
-                            embed.description = f"🔴 **ÉLŐ**: {title}"
-                            if "watch?v=" in url:
-                                vid_id = url.split("watch?v=")[-1]
-                                embed.set_image(url=f"https://img.youtube.com/vi/{vid_id}/maxresdefault.jpg")
-                            await channel.send(embed=embed)
-                            print(f"➡️ YouTube (RSS) értesítés: {username} -> {channel_id} (guild: {guild_id})")
-                        seen.setdefault(guild_id, {})[username] = url
-                    except Exception as inner:
-                        print(f"[youtube_rss_watcher belső hiba] {inner}")
-            await asyncio.sleep(600)  # 10 perc
-        except Exception as e:
-            print(f"[youtube_rss_watcher főhiba] {e}")
-            await asyncio.sleep(600)  # 10 perc
-
 class MyBot(commands.Bot):
     async def setup_hook(self):
-        self.loop.create_task(youtube_rss_watcher())
         # Indítsd itt aszinkron a watcher-t, így Render alatt nem lesz loop attribútum hiba
         self.loop.create_task(twitch_watcher())
-        # 
-        self.loop.create_task(youtube_watcher())  # API watcher disabled
+        self.loop.create_task(youtube_watcher())
         self.loop.create_task(kick_watcher())
         # Ha akarsz még egyéb initet (pl. cogs), ide jöhet
 
@@ -332,72 +291,59 @@ async def twitch_watcher():
                     except Exception as inner:
                         print(f"[twitch_watcher belső hiba] {inner}")
                         traceback.print_exc()
-            await asyncio.sleep(600)  # 10 perc
+            await asyncio.sleep(60)  # ellenőrzés gyakorisága (másodperc)
         except Exception as e:
             print(f"[twitch_watcher főhiba] {e}")
             traceback.print_exc()
-            await asyncio.sleep(600)  # 10 perc
+            await asyncio.sleep(60)
 
 
 
 # ------------------------
 # YouTube watcher (automatikus értesítések)
 # ------------------------
+
 async def youtube_watcher():
     await bot.wait_until_ready()
     print("🔁 YouTube watcher elindult.")
-    seen = {}  # guild_id -> username -> utolsó URL
+    seen = {}
 
     while not bot.is_closed():
         try:
             for guild_id, users in list(youtube_channels.items()):
                 for username, info in list(users.items()):
                     try:
-                        live, title, url = await is_youtube_live_or_latest(username)
-                        if not url:
+                        live, title, url = await is_youtube_live_only(username)
+                        if not live or not url:
                             continue
+
                         last_url = seen.get(guild_id, {}).get(username)
-                        if last_url != url:
-                            channel_id = info.get("channel_id")
-                            channel = bot.get_channel(channel_id)
-                            if channel:
-                                if not live:
-                                    continue
+                        if last_url == url:
+                            continue
 
-                                icon = "🔴"
-                                # 1️⃣ Szöveges blokk
-                                msg = f"""{icon} **{username}** új tartalommal a YouTube-on!
-📝 {title}
-🔗 {url}"""
-                                await channel.send(msg)
+                        channel_id = info.get("channel_id")
+                        channel = bot.get_channel(channel_id)
+                        if channel:
+                            msg = f"🔴 **{username}** élőben a YouTube-on!\n📝 {title}\n🔗 {url}"
+                            await channel.send(msg)
 
-                                # 2️⃣ Embed panel (thumbnail + státusz)
-                                embed = discord.Embed(
-                                    title=f"{username} YouTube csatornája",
-                                    url=f"https://youtube.com/@{username}",
-                                    color=discord.Color.red()
-                                )
-                                if live:
-                                    embed.description = f"🔴 **ÉLŐ**: {title}"
-                                else:
-                                    continue
+                            embed = discord.Embed(
+                                title=f"{username} YouTube csatornája",
+                                url=f"https://youtube.com/@{username}",
+                                description=f"🔴 **ÉLŐ**: {title}",
+                                color=discord.Color.red()
+                            )
+                            if "watch?v=" in url:
+                                vid_id = url.split("watch?v=")[-1]
+                                embed.set_image(url=f"https://img.youtube.com/vi/{vid_id}/maxresdefault.jpg")
 
-                                if "watch?v=" in url:
-                                    vid_id = url.split("watch?v=")[-1]
-                                    embed.set_image(url=f"https://img.youtube.com/vi/{vid_id}/maxresdefault.jpg")
+                            await channel.send(embed=embed)
 
-                                try:
-                                    await channel.send(embed=embed)
-                                    print(f"➡️ YouTube értesítés: {username} -> {channel_id} (guild: {guild_id})")
-                                except Exception as e:
-                                    print(f"⚠️ Nem sikerült értesítést küldeni YouTube: {e}")
-                            seen.setdefault(guild_id, {})[username] = url
+                        seen.setdefault(guild_id, {})[username] = url
                     except Exception as inner:
                         print(f"[youtube_watcher belső hiba] {inner}")
-            await asyncio.sleep(600)  # 2 percenként ellenőrzés
-        except Exception as e:
-            print(f"[youtube_watcher főhiba] {e}")
-            await asyncio.sleep(600)  # 2 percenként ellenőrzés
+
+            await asyncio.sleep(600)  # 10 perc
         except Exception as e:
             print(f"[youtube_watcher főhiba] {e}")
             await asyncio.sleep(600)
@@ -468,57 +414,26 @@ try:
 except Exception:
     pass
 
-# ------------------------
-# YouTube helper: élő-e vagy legutóbbi videó
-# ------------------------
 
-async def is_youtube_live_or_latest(username: str):
-    """Csak élőt keres az API-val (új videó nem)."""
+# Új helper – csak élő stream ellenőrzés
+async def is_youtube_live_only(username: str):
+    """Visszaad: (live: bool, title: str | None, url: str | None)"""
     if not YOUTUBE_API_KEY:
         return False, None, None
-    username = username.strip().lstrip('@').split('/')[-1]
-    base = "https://www.googleapis.com/youtube/v3"
-    chan_url = f"{base}/channels"
-    params = {"part": "id,snippet,contentDetails", "forUsername": username, "key": YOUTUBE_API_KEY}
-    async with aiohttp.ClientSession() as session:
-        async with session.get(chan_url, params=params, timeout=15) as resp:
-            data = await resp.json()
-            items = data.get("items") or []
-            if not items:
-                search_url = f"{base}/search"
-                s_params = {"part": "snippet", "q": username, "type": "channel", "maxResults": 1, "key": YOUTUBE_API_KEY}
-                async with session.get(search_url, params=s_params, timeout=15) as s_resp:
-                    s_data = await s_resp.json()
-                    s_items = s_data.get("items") or []
-                    if not s_items:
-                        return False, None, None
-                    channel_id = s_items[0]["id"]["channelId"]
-            else:
-                channel_id = items[0]["id"]
-
-    live_url = f"{base}/search"
-    live_params = {"part": "snippet", "channelId": channel_id, "eventType": "live", "type": "video", "maxResults": 1, "key": YOUTUBE_API_KEY}
-    async with aiohttp.ClientSession() as session:
-        async with session.get(live_url, params=live_params, timeout=15) as resp:
-            l_data = await resp.json()
-            l_items = l_data.get("items") or []
-            if l_items:
-                vid = l_items[0]["id"]["videoId"]
-                title = l_items[0]["snippet"]["title"]
-                return True, title, f"https://www.youtube.com/watch?v={vid}"
-    return False, None, None
 
     username = username.strip().lstrip('@').split('/')[-1]
-
     base = "https://www.googleapis.com/youtube/v3"
+
+    # Csatorna ID keresés
     chan_url = f"{base}/channels"
-    params = {"part": "id,snippet,contentDetails", "forUsername": username, "key": YOUTUBE_API_KEY}
+    params = {"part": "id", "forUsername": username, "key": YOUTUBE_API_KEY}
 
     async with aiohttp.ClientSession() as session:
         async with session.get(chan_url, params=params, timeout=15) as resp:
             data = await resp.json()
             items = data.get("items") or []
             if not items:
+                # ha nincs találat -> kereséssel
                 search_url = f"{base}/search"
                 s_params = {"part": "snippet", "q": username, "type": "channel", "maxResults": 1, "key": YOUTUBE_API_KEY}
                 async with session.get(search_url, params=s_params, timeout=15) as s_resp:
@@ -532,7 +447,8 @@ async def is_youtube_live_or_latest(username: str):
 
     # Élő keresés
     live_url = f"{base}/search"
-    live_params = {"part": "snippet", "channelId": channel_id, "eventType": "live", "type": "video", "maxResults": 1, "key": YOUTUBE_API_KEY}
+    live_params = {"part": "snippet", "channelId": channel_id, "eventType": "live",
+                   "type": "video", "maxResults": 1, "key": YOUTUBE_API_KEY}
     async with aiohttp.ClientSession() as session:
         async with session.get(live_url, params=live_params, timeout=15) as resp:
             l_data = await resp.json()
@@ -542,20 +458,19 @@ async def is_youtube_live_or_latest(username: str):
                 title = l_items[0]["snippet"]["title"]
                 return True, title, f"https://www.youtube.com/watch?v={vid}"
 
-    # LEGFRISSEBB VIDEÓ — kikommentelve
-    # latest_url = f"{base}/search"
-    # latest_params = {"part": "snippet", "channelId": channel_id, "maxResults": 1, "order": "date", "type": "video", "key": YOUTUBE_API_KEY}
-    # async with aiohttp.ClientSession() as session:
-    #     async with session.get(latest_url, params=latest_params, timeout=15) as resp:
-    #         d = await resp.json()
-    #         items = d.get("items") or []
-    #         if items:
-    #             vid = items[0]["id"]["videoId"]
-    #             title = items[0]["snippet"]["title"]
-    #             # return False, title, f"https://www.youtube.com/watch?v={vid}"
-
     return False, None, None
 
+
+# ------------------------
+# YouTube helper: élő-e vagy legutóbbi videó
+# ------------------------
+async def is_youtube_live_or_latest(username: str):
+    """Visszaad: (live: bool, title: str | None, url: str | None)
+    Megjegyzés: a `forUsername` csak legacy YouTube felhasználóneveknél működik. Ha @handle-t adsz meg,
+    érdemes a `channels?forUsername` helyett handle feloldást is beépíteni később.
+    """
+    if not YOUTUBE_API_KEY:
+        return False, None, None
 
     username = username.strip().lstrip('@').split('/')[-1]
 
@@ -1352,10 +1267,10 @@ async def kick_watcher():
                             kick_streams[guild_id][username]["live"] = False
                     except Exception as inner:
                         print(f"[kick_watcher hiba] {inner}")
-            await asyncio.sleep(600)  # 10 perc
+            await asyncio.sleep(60)
         except Exception as e:
             print(f"[kick_watcher főhiba] {e}")
-            await asyncio.sleep(600)  # 10 perc
+            await asyncio.sleep(60)
 
 @bot.command(name="dbkickadd")
 @admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"], user_ids=[111111111111111111, 222222222222222222])
@@ -1557,218 +1472,3 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
-
-
-
-
-# =========================
-# RSS alapú YouTube watcher (API nélkül, frissített: feed + watch ellenőrzés)
-# =========================
-import re
-import xml.etree.ElementTree as ET
-
-# --------- PERMISSIONS (RSS) ---------
-# Opcionális: vessző- vagy pontosvessző-elosztott user ID lista (pl. YTRSS_ALLOWED_USERS="123,456;789")
-YTRSS_ALLOWED_USERS = set()
-try:
-    _ids = os.getenv("YTRSS_ALLOWED_USERS", "").replace(";", ",").split(",")
-    YTRSS_ALLOWED_USERS = {int(x.strip()) for x in _ids if x.strip().isdigit()}
-except Exception:
-    YTRSS_ALLOWED_USERS = set()
-
-def _has_ytrss_perms(ctx, role_names: set[str]) -> bool:
-    # Admin
-    if getattr(ctx.author.guild_permissions, "administrator", False):
-        return True
-    # Szerepkör
-    user_roles = {r.name for r in getattr(ctx.author, "roles", []) if hasattr(r, "name")}
-    if user_roles.intersection(role_names):
-        return True
-    # Kiemelt user
-    if ctx.author.id in YTRSS_ALLOWED_USERS:
-        return True
-    return False
-
-
-
-# --------- JSON HELPERS ---------
-def load_json(path):
-    import json, os
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            try:
-                return json.load(f)
-            except Exception:
-                return {}
-    return {}
-
-def save_json(path, data):
-    import json, os
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-
-# --------- INITIAL LOAD FROM GITHUB ---------
-youtube_channels = load_json("youtube_streams.json")
-rss_youtube_channels = load_json("rss_youtube_streams.json")
-
-# Overwrite/create state JSONs at startup
-save_json("youtube_streams_state.json", youtube_channels)
-save_json("rss_youtube_streams_state.json", rss_youtube_channels)
-
-# During runtime, always use state JSONs
-youtube_channels = load_json("youtube_streams_state.json")
-rss_youtube_channels = load_json("rss_youtube_streams_state.json")
-
-
-
-YOUTUBE_FEED_TMPL = "https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-
-async def _resolve_channel_id_noapi(username: str) -> str | None:
-    handle = username.strip().lstrip('@').split('/')[-1]
-    url = f"https://www.youtube.com/@{handle}"
-    try:
-        timeout = aiohttp.ClientTimeout(total=15)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers={"Accept-Language":"en"}, allow_redirects=True) as resp:
-                if resp.status != 200:
-                    return None
-                html = await resp.text()
-    except Exception:
-        return None
-    m = re.search(r'"channelId":"(UC[0-9A-Za-z_-]{22})"', html)
-    if m:
-        return m.group(1)
-    return None
-
-async def _get_latest_video_from_feed(channel_id: str) -> str | None:
-    url = YOUTUBE_FEED_TMPL.format(channel_id=channel_id)
-    try:
-        timeout = aiohttp.ClientTimeout(total=15)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers={"Accept":"application/atom+xml"}) as resp:
-                if resp.status != 200:
-                    return None
-                data = await resp.text()
-    except Exception:
-        return None
-    try:
-        ns = {
-            "atom": "http://www.w3.org/2005/Atom",
-            "yt": "http://www.youtube.com/xml/schemas/2015"
-        }
-        root = ET.fromstring(data)
-        entry = root.find("atom:entry", ns)
-        if entry is not None:
-            vid = entry.findtext("yt:videoId", default=None, namespaces=ns)
-            return vid
-    except Exception:
-        return None
-    return None
-
-async def _check_is_live(video_id: str) -> bool:
-    url = f"https://www.youtube.com/watch?v={video_id}"
-    try:
-        timeout = aiohttp.ClientTimeout(total=15)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers={"Accept-Language":"en"}) as resp:
-                if resp.status != 200:
-                    return False
-                html = await resp.text()
-                if '"isLiveNow":true' in html:
-                    return True
-    except Exception:
-        return False
-    return False
-
-async def _get_title_from_feed(channel_id: str, video_id: str) -> str | None:
-    url = YOUTUBE_FEED_TMPL.format(channel_id=channel_id)
-    try:
-        timeout = aiohttp.ClientTimeout(total=15)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers={"Accept":"application/atom+xml"}) as resp:
-                if resp.status != 200:
-                    return None
-                data = await resp.text()
-    except Exception:
-        return None
-    try:
-        ns = {
-            "atom": "http://www.w3.org/2005/Atom",
-            "yt": "http://www.youtube.com/xml/schemas/2015"
-        }
-        root = ET.fromstring(data)
-        for entry in root.findall("atom:entry", ns):
-            vid = entry.findtext("yt:videoId", default=None, namespaces=ns)
-            if vid == video_id:
-                title = entry.findtext("atom:title", default=None, namespaces=ns)
-                return title
-    except Exception:
-        return None
-    return None
-
-async def is_youtube_live_rss(username: str):
-    channel_id = await _resolve_channel_id_noapi(username)
-    if not channel_id:
-        return False, None, None
-    video_id = await _get_latest_video_from_feed(channel_id)
-    if not video_id:
-        return False, None, None
-    is_live = await _check_is_live(video_id)
-    if not is_live:
-        return False, None, None
-    title = await _get_title_from_feed(channel_id, video_id) or "YouTube Live"
-    return True, title, f"https://www.youtube.com/watch?v={video_id}"
-
-
-# ======================
-# RSS YOUTUBE COMMANDS
-# ======================
-
-@bot.command()
-async def dbyoutuberssadd(ctx, channel: discord.TextChannel, uc_id: str):
-    """UC azonosítós YouTube csatorna hozzáadása RSS figyeléshez."""
-    global rss_youtube_channels
-    # jogosultság: admin VAGY (LightSector YTRSS / LightSector YTRSS II) VAGY YTRSS_ALLOWED_USERS
-    if not _has_ytrss_perms(ctx, {"LightSector YTRSS", "LightSector YTRSS II"}):
-        await ctx.send("❌ Nincs jogosultságod ehhez a parancshoz.")
-        return
-    guild_id = str(ctx.guild.id)
-    if not uc_id.upper().startswith("UC"):
-        await ctx.send("❌ Ez nem érvényes UC azonosító.")
-        return
-    rss_youtube_channels.setdefault(guild_id, {})[uc_id] = {"channel_id": channel.id}
-    save_json("rss_youtube_streams_state.json", rss_youtube_channels)
-    await ctx.send(f"✅ RSS csatorna hozzáadva: {uc_id} → {channel.mention}")
-
-@bot.command()
-async def dbyoutuberssremove(ctx, uc_id: str):
-    """RSS YouTube csatorna törlése UC alapján."""
-    global rss_youtube_channels
-    if not _has_ytrss_perms(ctx, {"LightSector YTRSS", "LightSector YTRSS II"}):
-        await ctx.send("❌ Nincs jogosultságod ehhez a parancshoz.")
-        return
-    guild_id = str(ctx.guild.id)
-    if guild_id in rss_youtube_channels and uc_id in rss_youtube_channels[guild_id]:
-        del rss_youtube_channels[guild_id][uc_id]
-        save_json("rss_youtube_streams_state.json", rss_youtube_channels)
-        await ctx.send(f"❌ RSS csatorna törölve: {uc_id}")
-    else:
-        await ctx.send("Nem található az RSS listában.")
-
-@bot.command()
-async def dbyoutubersslist(ctx):
-    """RSS YouTube csatornák listázása szerver szinten."""
-    global rss_youtube_channels
-    # jogosultság: admin VAGY (LightSector YTRSS III / LightSector YTRSS IV) VAGY YTRSS_ALLOWED_USERS
-    if not _has_ytrss_perms(ctx, {"LightSector YTRSS III", "LightSector YTRSS IV"}):
-        await ctx.send("❌ Nincs jogosultságod ehhez a parancshoz.")
-        return
-    guild_id = str(ctx.guild.id)
-    msg = "**RSS YouTube lista:**\n"
-    if guild_id in rss_youtube_channels and rss_youtube_channels[guild_id]:
-        for uc_id, info in rss_youtube_channels[guild_id].items():
-            msg += f"- {uc_id} → <#{info['channel_id']}>\n"
-    else:
-        msg += "(üres)"
-    await ctx.send(msg)
