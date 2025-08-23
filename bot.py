@@ -1,13 +1,3 @@
-# --------- INITIAL LOAD FROM GITHUB ---------
-youtube_channels = load_json("youtube_streams.json")
-rss_youtube_channels = load_json("rss_youtube_streams.json")
-
-save_json("youtube_streams_state.json", youtube_channels)
-save_json("rss_youtube_streams_state.json", rss_youtube_channels)
-
-youtube_channels = load_json("youtube_streams_state.json")
-rss_youtube_channels = load_json("rss_youtube_streams_state.json")
-
 import discord
 from discord.ext import commands
 import os
@@ -18,8 +8,10 @@ import aiohttp
 import traceback
 from datetime import datetime
 
-
-# --------- JSON HELPERS ---------
+# ------------------------
+# ENV / Konfiguráció
+# ------------------------
+# --------- JSON HELPERS (must be before any use) ---------
 def load_json(path):
     import json, os
     if os.path.exists(path):
@@ -31,14 +23,24 @@ def load_json(path):
     return {}
 
 def save_json(path, data):
+
+# --------- INITIAL LOAD FROM GITHUB / CREATE STATE ---------
+youtube_channels = load_json("youtube_streams.json")
+rss_youtube_channels = load_json("rss_youtube_streams.json")
+
+# Initialize/overwrite local state at startup
+save_json("youtube_streams_state.json", youtube_channels)
+save_json("rss_youtube_streams_state.json", rss_youtube_channels)
+
+# Use state during runtime
+youtube_channels = load_json("youtube_streams_state.json")
+rss_youtube_channels = load_json("rss_youtube_streams_state.json")
+
     import json, os
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-# ------------------------
-# ENV / Konfiguráció
-# ------------------------
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -70,11 +72,10 @@ intents.members = True
 class MyBot(commands.Bot):
     async def setup_hook(self):
         self.loop.create_task(youtube_rss_watcher())
-
         # Indítsd itt aszinkron a watcher-t, így Render alatt nem lesz loop attribútum hiba
         self.loop.create_task(twitch_watcher())
-        # \1  # API watcher disabled
-
+        # 
+        self.loop.create_task(youtube_watcher())  # API watcher disabled
         self.loop.create_task(kick_watcher())
         # Ha akarsz még egyéb initet (pl. cogs), ide jöhet
 
@@ -327,10 +328,6 @@ async def twitch_watcher():
             print(f"[twitch_watcher főhiba] {e}")
             traceback.print_exc()
             await asyncio.sleep(600)  # 10 perc
-
-
-
-# ------------------------
 # YouTube watcher (automatikus értesítések)
 # ------------------------
 async def youtube_watcher():
@@ -449,7 +446,7 @@ def build_youtube_state_from_file():
     return state
 
 # runtime állapot inicializálása
-
+youtube_channels = build_youtube_state_from_file()
 
 # Ha nincs még ideiglenes fájl, hozzuk létre egyszer (biztosítja, hogy a weben legyen mit olvasni)
 try:
@@ -463,20 +460,20 @@ except Exception:
 # ------------------------
 
 async def is_youtube_live_or_latest(username: str):
-    """Csak élőt keres az API-val (új videó nem)."""
+    """Csak élőt keres az API-val (új videókat ignorál)."""
     if not YOUTUBE_API_KEY:
         return False, None, None
     username = username.strip().lstrip('@').split('/')[-1]
     base = "https://www.googleapis.com/youtube/v3"
     chan_url = f"{base}/channels"
-    params = {"part": "id,snippet,contentDetails", "forUsername": username, "key": YOUTUBE_API_KEY}
+    params = {"part":"id,snippet,contentDetails","forUsername":username,"key":YOUTUBE_API_KEY}
     async with aiohttp.ClientSession() as session:
         async with session.get(chan_url, params=params, timeout=15) as resp:
             data = await resp.json()
             items = data.get("items") or []
             if not items:
                 search_url = f"{base}/search"
-                s_params = {"part": "snippet", "q": username, "type": "channel", "maxResults": 1, "key": YOUTUBE_API_KEY}
+                s_params = {"part":"snippet","q":username,"type":"channel","maxResults":1,"key":YOUTUBE_API_KEY}
                 async with session.get(search_url, params=s_params, timeout=15) as s_resp:
                     s_data = await s_resp.json()
                     s_items = s_data.get("items") or []
@@ -485,9 +482,8 @@ async def is_youtube_live_or_latest(username: str):
                     channel_id = s_items[0]["id"]["channelId"]
             else:
                 channel_id = items[0]["id"]
-
     live_url = f"{base}/search"
-    live_params = {"part": "snippet", "channelId": channel_id, "eventType": "live", "type": "video", "maxResults": 1, "key": YOUTUBE_API_KEY}
+    live_params = {"part":"snippet","channelId":channel_id,"eventType":"live","type":"video","maxResults":1,"key":YOUTUBE_API_KEY}
     async with aiohttp.ClientSession() as session:
         async with session.get(live_url, params=live_params, timeout=15) as resp:
             l_data = await resp.json()
@@ -1342,12 +1338,9 @@ async def kick_watcher():
                             kick_streams[guild_id][username]["live"] = False
                     except Exception as inner:
                         print(f"[kick_watcher hiba] {inner}")
-            await asyncio.sleep(600)  # 10 perc
-        except Exception as e:
+            await asyncio.sleep(600)  # 10 percexcept Exception as e:
             print(f"[kick_watcher főhiba] {e}")
-            await asyncio.sleep(600)  # 10 perc
-
-@bot.command(name="dbkickadd")
+            await asyncio.sleep(600)  # 10 perc@bot.command(name="dbkickadd")
 @admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"], user_ids=[111111111111111111, 222222222222222222])
 async def dbkickadd(ctx, channel_id: int, username: str):
     username = username.lower().strip().lstrip('@').split('/')[-1]
