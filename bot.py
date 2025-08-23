@@ -1608,4 +1608,5 @@ async def youtube_rss_watcher():
             await asyncio.sleep(600)  # 10 percenként ellenőrzés
         except Exception as e:
             print(f"[youtube_rss_watcher főhiba] {e}")
-            await asyncio.sleep(600)  # 10 perc
+            await asyncio.sleep(60)  # 1 perc
+
