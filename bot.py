@@ -39,6 +39,45 @@ intents.reactions = True
 intents.guilds = True
 intents.members = True
 
+async def youtube_rss_watcher():
+    await bot.wait_until_ready()
+    print("🔁 YouTube RSS watcher elindult (feed+watch módszer).")
+    seen = {}
+    while not bot.is_closed():
+        try:
+            for guild_id, users in list(youtube_channels.items()):
+                for username, info in list(users.items()):
+                    try:
+                        live, title, url = await is_youtube_live_rss(username)
+                        if not (live and url):
+                            continue
+                        last_url = seen.get(guild_id, {}).get(username)
+                        if last_url == url:
+                            continue
+                        channel_id = info.get("channel_id")
+                        channel = bot.get_channel(channel_id)
+                        if channel:
+                            msg = f"🔴 **{username}** élőben van a YouTube-on!\n📝 {title}\n🔗 {url}"
+                            await channel.send(msg)
+                            embed = discord.Embed(
+                                title=f"{username} YouTube csatornája",
+                                url=f"https://youtube.com/@{username}",
+                                color=discord.Color.red()
+                            )
+                            embed.description = f"🔴 **ÉLŐ**: {title}"
+                            if "watch?v=" in url:
+                                vid_id = url.split("watch?v=")[-1]
+                                embed.set_image(url=f"https://img.youtube.com/vi/{vid_id}/maxresdefault.jpg")
+                            await channel.send(embed=embed)
+                            print(f"➡️ YouTube (RSS) értesítés: {username} -> {channel_id} (guild: {guild_id})")
+                        seen.setdefault(guild_id, {})[username] = url
+                    except Exception as inner:
+                        print(f"[youtube_rss_watcher belső hiba] {inner}")
+            await asyncio.sleep(600)  # 10 perc
+        except Exception as e:
+            print(f"[youtube_rss_watcher főhiba] {e}")
+            await asyncio.sleep(600)  # 10 perc
+
 class MyBot(commands.Bot):
     async def setup_hook(self):
         self.loop.create_task(youtube_rss_watcher())
@@ -1681,44 +1720,6 @@ async def is_youtube_live_rss(username: str):
     title = await _get_title_from_feed(channel_id, video_id) or "YouTube Live"
     return True, title, f"https://www.youtube.com/watch?v={video_id}"
 
-async def youtube_rss_watcher():
-    await bot.wait_until_ready()
-    print("🔁 YouTube RSS watcher elindult (feed+watch módszer).")
-    seen = {}
-    while not bot.is_closed():
-        try:
-            for guild_id, users in list(youtube_channels.items()):
-                for username, info in list(users.items()):
-                    try:
-                        live, title, url = await is_youtube_live_rss(username)
-                        if not (live and url):
-                            continue
-                        last_url = seen.get(guild_id, {}).get(username)
-                        if last_url == url:
-                            continue
-                        channel_id = info.get("channel_id")
-                        channel = bot.get_channel(channel_id)
-                        if channel:
-                            msg = f"🔴 **{username}** élőben van a YouTube-on!\n📝 {title}\n🔗 {url}"
-                            await channel.send(msg)
-                            embed = discord.Embed(
-                                title=f"{username} YouTube csatornája",
-                                url=f"https://youtube.com/@{username}",
-                                color=discord.Color.red()
-                            )
-                            embed.description = f"🔴 **ÉLŐ**: {title}"
-                            if "watch?v=" in url:
-                                vid_id = url.split("watch?v=")[-1]
-                                embed.set_image(url=f"https://img.youtube.com/vi/{vid_id}/maxresdefault.jpg")
-                            await channel.send(embed=embed)
-                            print(f"➡️ YouTube (RSS) értesítés: {username} -> {channel_id} (guild: {guild_id})")
-                        seen.setdefault(guild_id, {})[username] = url
-                    except Exception as inner:
-                        print(f"[youtube_rss_watcher belső hiba] {inner}")
-            await asyncio.sleep(600)  # 10 perc
-        except Exception as e:
-            print(f"[youtube_rss_watcher főhiba] {e}")
-            await asyncio.sleep(600)  # 10 perc
 
 # ======================
 # RSS YOUTUBE COMMANDS
