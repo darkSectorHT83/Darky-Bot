@@ -41,9 +41,12 @@ intents.members = True
 
 class MyBot(commands.Bot):
     async def setup_hook(self):
+        self.loop.create_task(youtube_rss_watcher())
+
+    async def setup_hook(self):
         # Indítsd itt aszinkron a watcher-t, így Render alatt nem lesz loop attribútum hiba
         self.loop.create_task(twitch_watcher())
-        self.loop.create_task(youtube_watcher())
+        # self.loop.create_task(youtube_watcher())   # API watcher disabled
         self.loop.create_task(kick_watcher())
         # Ha akarsz még egyéb initet (pl. cogs), ide jöhet
 
@@ -418,7 +421,19 @@ def build_youtube_state_from_file():
     return state
 
 # runtime állapot inicializálása
-youtube_channels = build_youtube_state_from_file()
+
+# --------- INITIAL LOAD FROM GITHUB ---------
+youtube_channels = load_json("youtube_streams.json")
+rss_youtube_channels = load_json("rss_youtube_streams.json")
+
+# Overwrite/create state JSONs at startup
+save_json("youtube_streams_state.json", youtube_channels)
+save_json("rss_youtube_streams_state.json", rss_youtube_channels)
+
+# During runtime, always use state JSONs
+youtube_channels = load_json("youtube_streams_state.json")
+rss_youtube_channels = load_json("rss_youtube_streams_state.json")
+
 
 # Ha nincs még ideiglenes fájl, hozzuk létre egyszer (biztosítja, hogy a weben legyen mit olvasni)
 try:
