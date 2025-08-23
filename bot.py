@@ -41,9 +41,11 @@ intents.members = True
 
 class MyBot(commands.Bot):
     async def setup_hook(self):
+        self.loop.create_task(youtube_rss_watcher())
         # Indítsd itt aszinkron a watcher-t, így Render alatt nem lesz loop attribútum hiba
         self.loop.create_task(twitch_watcher())
-        self.loop.create_task(youtube_watcher())
+        # 
+        self.loop.create_task(youtube_watcher())  # API watcher disabled
         self.loop.create_task(kick_watcher())
         # Ha akarsz még egyéb initet (pl. cogs), ide jöhet
 
@@ -291,11 +293,11 @@ async def twitch_watcher():
                     except Exception as inner:
                         print(f"[twitch_watcher belső hiba] {inner}")
                         traceback.print_exc()
-            await asyncio.sleep(60)  # ellenőrzés gyakorisága (másodperc)
+            await asyncio.sleep(600)  # 10 perc
         except Exception as e:
             print(f"[twitch_watcher főhiba] {e}")
             traceback.print_exc()
-            await asyncio.sleep(60)
+            await asyncio.sleep(600)  # 10 perc
 
 
 
@@ -432,11 +434,40 @@ except Exception:
 # ------------------------
 
 async def is_youtube_live_or_latest(username: str):
-    """Visszaad: (live: bool, title: str | None, url: str | None)
-    Mostantól kizárólag az ÉLŐ adást figyeli. Az 'új videó' rész lentebb # jellel inaktiválva.
-    """
+    """Csak élőt keres az API-val (új videó nem)."""
     if not YOUTUBE_API_KEY:
         return False, None, None
+    username = username.strip().lstrip('@').split('/')[-1]
+    base = "https://www.googleapis.com/youtube/v3"
+    chan_url = f"{base}/channels"
+    params = {"part": "id,snippet,contentDetails", "forUsername": username, "key": YOUTUBE_API_KEY}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(chan_url, params=params, timeout=15) as resp:
+            data = await resp.json()
+            items = data.get("items") or []
+            if not items:
+                search_url = f"{base}/search"
+                s_params = {"part": "snippet", "q": username, "type": "channel", "maxResults": 1, "key": YOUTUBE_API_KEY}
+                async with session.get(search_url, params=s_params, timeout=15) as s_resp:
+                    s_data = await s_resp.json()
+                    s_items = s_data.get("items") or []
+                    if not s_items:
+                        return False, None, None
+                    channel_id = s_items[0]["id"]["channelId"]
+            else:
+                channel_id = items[0]["id"]
+
+    live_url = f"{base}/search"
+    live_params = {"part": "snippet", "channelId": channel_id, "eventType": "live", "type": "video", "maxResults": 1, "key": YOUTUBE_API_KEY}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(live_url, params=live_params, timeout=15) as resp:
+            l_data = await resp.json()
+            l_items = l_data.get("items") or []
+            if l_items:
+                vid = l_items[0]["id"]["videoId"]
+                title = l_items[0]["snippet"]["title"]
+                return True, title, f"https://www.youtube.com/watch?v={vid}"
+    return False, None, None
 
     username = username.strip().lstrip('@').split('/')[-1]
 
@@ -1282,10 +1313,10 @@ async def kick_watcher():
                             kick_streams[guild_id][username]["live"] = False
                     except Exception as inner:
                         print(f"[kick_watcher hiba] {inner}")
-            await asyncio.sleep(60)
+            await asyncio.sleep(600)  # 10 perc
         except Exception as e:
             print(f"[kick_watcher főhiba] {e}")
-            await asyncio.sleep(60)
+            await asyncio.sleep(600)  # 10 perc
 
 @bot.command(name="dbkickadd")
 @admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"], user_ids=[111111111111111111, 222222222222222222])
@@ -1497,6 +1528,30 @@ if __name__ == "__main__":
 import re
 import xml.etree.ElementTree as ET
 
+# --------- PERMISSIONS (RSS) ---------
+# Opcionális: vessző- vagy pontosvessző-elosztott user ID lista (pl. YTRSS_ALLOWED_USERS="123,456;789")
+YTRSS_ALLOWED_USERS = set()
+try:
+    _ids = os.getenv("YTRSS_ALLOWED_USERS", "").replace(";", ",").split(",")
+    YTRSS_ALLOWED_USERS = {int(x.strip()) for x in _ids if x.strip().isdigit()}
+except Exception:
+    YTRSS_ALLOWED_USERS = set()
+
+def _has_ytrss_perms(ctx, role_names: set[str]) -> bool:
+    # Admin
+    if getattr(ctx.author.guild_permissions, "administrator", False):
+        return True
+    # Szerepkör
+    user_roles = {r.name for r in getattr(ctx.author, "roles", []) if hasattr(r, "name")}
+    if user_roles.intersection(role_names):
+        return True
+    # Kiemelt user
+    if ctx.author.id in YTRSS_ALLOWED_USERS:
+        return True
+    return False
+
+
+
 # --------- JSON HELPERS ---------
 def load_json(path):
     import json, os
@@ -1660,7 +1715,58 @@ async def youtube_rss_watcher():
                         seen.setdefault(guild_id, {})[username] = url
                     except Exception as inner:
                         print(f"[youtube_rss_watcher belső hiba] {inner}")
-            await asyncio.sleep(60)  # 1 percenként ellenőrzés
+            await asyncio.sleep(600)  # 10 perc
         except Exception as e:
             print(f"[youtube_rss_watcher főhiba] {e}")
-            await asyncio.sleep(60)  # 1 perc
+            await asyncio.sleep(600)  # 10 perc
+
+# ======================
+# RSS YOUTUBE COMMANDS
+# ======================
+@bot.command()
+async def dbyoutuberssadd(ctx, channel: discord.TextChannel, uc_id: str):
+    """UC azonosítós YouTube csatorna hozzáadása RSS figyeléshez."""
+    global rss_youtube_channels
+    # jogosultság: admin VAGY (LightSector YTRSS / LightSector YTRSS II) VAGY YTRSS_ALLOWED_USERS
+    if not _has_ytrss_perms(ctx, {"LightSector YTRSS", "LightSector YTRSS II"}):
+        await ctx.send("❌ Nincs jogosultságod ehhez a parancshoz.")
+        return
+    guild_id = str(ctx.guild.id)
+    if not uc_id.upper().startswith("UC"):
+        await ctx.send("❌ Ez nem érvényes UC azonosító.")
+        return
+    rss_youtube_channels.setdefault(guild_id, {})[uc_id] = {"channel_id": channel.id}
+    save_json("rss_youtube_streams_state.json", rss_youtube_channels)
+    await ctx.send(f"✅ RSS csatorna hozzáadva: {uc_id} → {channel.mention}")
+
+@bot.command()
+async def dbyoutuberssremove(ctx, uc_id: str):
+    """RSS YouTube csatorna törlése UC alapján."""
+    global rss_youtube_channels
+    if not _has_ytrss_perms(ctx, {"LightSector YTRSS", "LightSector YTRSS II"}):
+        await ctx.send("❌ Nincs jogosultságod ehhez a parancshoz.")
+        return
+    guild_id = str(ctx.guild.id)
+    if guild_id in rss_youtube_channels and uc_id in rss_youtube_channels[guild_id]:
+        del rss_youtube_channels[guild_id][uc_id]
+        save_json("rss_youtube_streams_state.json", rss_youtube_channels)
+        await ctx.send(f"❌ RSS csatorna törölve: {uc_id}")
+    else:
+        await ctx.send("Nem található az RSS listában.")
+
+@bot.command()
+async def dbyoutubersslist(ctx):
+    """RSS YouTube csatornák listázása szerver szinten."""
+    global rss_youtube_channels
+    # jogosultság: admin VAGY (LightSector YTRSS III / LightSector YTRSS IV) VAGY YTRSS_ALLOWED_USERS
+    if not _has_ytrss_perms(ctx, {"LightSector YTRSS III", "LightSector YTRSS IV"}):
+        await ctx.send("❌ Nincs jogosultságod ehhez a parancshoz.")
+        return
+    guild_id = str(ctx.guild.id)
+    msg = "**RSS YouTube lista:**\n"
+    if guild_id in rss_youtube_channels and rss_youtube_channels[guild_id]:
+        for uc_id, info in rss_youtube_channels[guild_id].items():
+            msg += f"- {uc_id} → <#{info['channel_id']}>\n"
+    else:
+        msg += "(üres)"
+    await ctx.send(msg)
