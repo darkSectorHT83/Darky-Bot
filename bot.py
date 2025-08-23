@@ -1724,6 +1724,7 @@ async def is_youtube_live_rss(username: str):
 # ======================
 # RSS YOUTUBE COMMANDS
 # ======================
+
 @bot.command()
 async def dbyoutuberssadd(ctx, channel: discord.TextChannel, uc_id: str):
     """UC azonosítós YouTube csatorna hozzáadása RSS figyeléshez."""
