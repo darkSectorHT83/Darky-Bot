@@ -472,7 +472,7 @@ async def is_youtube_live_or_latest(username: str):
                 title = l_items[0]["snippet"]["title"]
                 return True, title, f"https://www.youtube.com/watch?v={vid}"
 
-    # LEGFRISSEBB VIDEÓ — kikommentelve, ha akarod visszakapcsolhatod
+    # LEGFRISSEBB VIDEÓ — kikommentelve
     # latest_url = f"{base}/search"
     # latest_params = {"part": "snippet", "channelId": channel_id, "maxResults": 1, "order": "date", "type": "video", "key": YOUTUBE_API_KEY}
     # async with aiohttp.ClientSession() as session:
@@ -1490,8 +1490,9 @@ if __name__ == "__main__":
 
 
 
+
 # =========================
-# RSS alapú YouTube watcher (API nélkül)
+# RSS alapú YouTube watcher (API nélkül, frissített: feed + watch ellenőrzés)
 # =========================
 import re
 import xml.etree.ElementTree as ET
@@ -1515,27 +1516,47 @@ async def _resolve_channel_id_noapi(username: str) -> str | None:
         return m.group(1)
     return None
 
-async def _get_live_video_id(channel_id: str) -> str | None:
-    url = f"https://www.youtube.com/channel/{channel_id}/live"
+async def _get_latest_video_from_feed(channel_id: str) -> str | None:
+    url = YOUTUBE_FEED_TMPL.format(channel_id=channel_id)
     try:
         timeout = aiohttp.ClientTimeout(total=15)
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, allow_redirects=False, headers={"Accept-Language":"en"}) as resp:
-                if resp.status in (301,302,303,307,308):
-                    loc = resp.headers.get("Location", "")
-                    if "watch?v=" in loc:
-                        return loc.split("watch?v=")[-1].split("&")[0]
-                if resp.status == 200:
-                    text = await resp.text()
-                    if '"isLiveNow":true' in text:
-                        m = re.search(r'"videoId":"([0-9A-Za-z_-]{11})"', text)
-                        if m:
-                            return m.group(1)
+            async with session.get(url, headers={"Accept":"application/atom+xml"}) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.text()
+    except Exception:
+        return None
+    try:
+        ns = {
+            "atom": "http://www.w3.org/2005/Atom",
+            "yt": "http://www.youtube.com/xml/schemas/2015"
+        }
+        root = ET.fromstring(data)
+        entry = root.find("atom:entry", ns)
+        if entry is not None:
+            vid = entry.findtext("yt:videoId", default=None, namespaces=ns)
+            return vid
     except Exception:
         return None
     return None
 
-async def _get_title_from_rss(channel_id: str, video_id: str) -> str | None:
+async def _check_is_live(video_id: str) -> bool:
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    try:
+        timeout = aiohttp.ClientTimeout(total=15)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, headers={"Accept-Language":"en"}) as resp:
+                if resp.status != 200:
+                    return False
+                html = await resp.text()
+                if '"isLiveNow":true' in html:
+                    return True
+    except Exception:
+        return False
+    return False
+
+async def _get_title_from_feed(channel_id: str, video_id: str) -> str | None:
     url = YOUTUBE_FEED_TMPL.format(channel_id=channel_id)
     try:
         timeout = aiohttp.ClientTimeout(total=15)
@@ -1565,15 +1586,18 @@ async def is_youtube_live_rss(username: str):
     channel_id = await _resolve_channel_id_noapi(username)
     if not channel_id:
         return False, None, None
-    video_id = await _get_live_video_id(channel_id)
+    video_id = await _get_latest_video_from_feed(channel_id)
     if not video_id:
         return False, None, None
-    title = await _get_title_from_rss(channel_id, video_id) or "YouTube Live"
+    is_live = await _check_is_live(video_id)
+    if not is_live:
+        return False, None, None
+    title = await _get_title_from_feed(channel_id, video_id) or "YouTube Live"
     return True, title, f"https://www.youtube.com/watch?v={video_id}"
 
 async def youtube_rss_watcher():
     await bot.wait_until_ready()
-    print("🔁 YouTube RSS watcher elindult.")
+    print("🔁 YouTube RSS watcher elindult (feed+watch módszer).")
     seen = {}
     while not bot.is_closed():
         try:
@@ -1605,10 +1629,7 @@ async def youtube_rss_watcher():
                         seen.setdefault(guild_id, {})[username] = url
                     except Exception as inner:
                         print(f"[youtube_rss_watcher belső hiba] {inner}")
-            await asyncio.sleep(60)  # 1 percenként ellenőrzés
+            await asyncio.sleep(600)  # 10 percenként ellenőrzés
         except Exception as e:
             print(f"[youtube_rss_watcher főhiba] {e}")
-            await asyncio.sleep(60)  # 1 perc
-
-
-
+            await asyncio.sleep(600)  # 10 perc
