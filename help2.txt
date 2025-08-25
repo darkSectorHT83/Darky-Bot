@@ -8,7 +8,7 @@ ChatGTP-4o AI (nem tárol üzenetet):
 !gpt <szöveg>                                   - ChatGPT Chatbot (Admin/Rang/User, adatbázis 2023.10.01)
 
 Gemini AI (nem tárol üzenetet):
-!gpt <szöveg>                                   - Gemini Chatbot (Admin/Rang/User, adatbázis 2023.10.01)
+!g <szöveg>                                     - Gemini Chatbot (Admin/Rang/User, adatbázis 2023.10.01)
 
 Reaction Role (*):
 !addreaction <üzenet_id> <emoji> <rang neve>    - Reakció hozzáadása (Admin/Rang/User)
