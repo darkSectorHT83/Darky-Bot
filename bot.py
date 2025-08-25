@@ -648,7 +648,7 @@ async def gpt_image(prompt):
 @bot.command()
 @admin_or_roles_or_users(
     roles=["LightSector G", "LightSector II"],
-    user_ids=[111111111111111111, 222222222222222222]
+    user_ids=[111111111111111111, 222222222222222222, 419451608485593089]
 )
 async def g(ctx, *, prompt: str):
     if ctx.guild.id not in allowed_guilds:
@@ -660,7 +660,7 @@ async def g(ctx, *, prompt: str):
 @bot.command()
 @admin_or_roles_or_users(
     roles=["LightSector GPT", "LightSector II"],
-    user_ids=[111111111111111111, 222222222222222222]
+    user_ids=[111111111111111111, 222222222222222222, 419451608485593089]
 )
 async def gpic(ctx, *, prompt: str):
     if ctx.guild.id not in allowed_guilds:
@@ -672,7 +672,7 @@ async def gpic(ctx, *, prompt: str):
 @bot.command()
 @admin_or_roles_or_users(
     roles=["LightSector GPT", "LightSector II"],
-    user_ids=[111111111111111111, 222222222222222222]
+    user_ids=[111111111111111111, 222222222222222222, 419451608485593089]
 )
 async def gpt(ctx, *, prompt: str):
     if ctx.guild.id not in allowed_guilds:
@@ -684,7 +684,7 @@ async def gpt(ctx, *, prompt: str):
 @bot.command()
 @admin_or_roles_or_users(
     roles=["LightSector GPT", "LightSector II"],
-    user_ids=[111111111111111111, 222222222222222222]
+    user_ids=[111111111111111111, 222222222222222222, 419451608485593089]
 )
 async def gptpic(ctx, *, prompt: str):
     if ctx.guild.id not in allowed_guilds:
@@ -700,7 +700,7 @@ async def gptpic(ctx, *, prompt: str):
 @bot.command(name="dbtwitchadd")
 @admin_or_roles_or_users(
     roles=["LightSector TWITCH", "LightSector II"],
-    user_ids=[111111111111111111, 222222222222222222]
+    user_ids=[111111111111111111, 222222222222222222, 419451608485593089]
 )
 async def dbtwitchadd(ctx, channel_id: int, username: str):
     """!dbtwitchadd <twitch_username> <discord_channel_id>"""
@@ -736,7 +736,7 @@ async def dbtwitchadd(ctx, channel_id: int, username: str):
 @bot.command(name="dbtwitchremove")
 @admin_or_roles_or_users(
     roles=["LightSector TWITCH", "LightSector II"],
-    user_ids=[111111111111111111, 222222222222222222]
+    user_ids=[111111111111111111, 222222222222222222, 419451608485593089]
 )
 async def dbtwitchremove(ctx, username: str):
     username = username.lower().strip().lstrip('@').split('/')[-1]
@@ -778,7 +778,7 @@ async def dbtwitchremove(ctx, username: str):
 @bot.command(name="dbtwitchlist")
 @admin_or_roles_or_users(
     roles=["LightSector TWITCH", "LightSector II"],
-    user_ids=[111111111111111111, 222222222222222222]
+    user_ids=[111111111111111111, 222222222222222222, 419451608485593089]
 )
 async def dbtwitchlist(ctx):
     """
@@ -824,7 +824,7 @@ async def dbtwitchlist(ctx):
 @bot.command(name="dbtwitch")
 @admin_or_roles_or_users(
     roles=["LightSector TWITCH II", "LightSector III"],
-    user_ids=[111111111111111111, 222222222222222222]
+    user_ids=[111111111111111111, 222222222222222222, 419451608485593089]
 )
 async def dbtwitch_cmd(ctx, username: str = None):
     """!dbtwitch <twitch_username> - küld egy Twitch linket előnézettel."""
@@ -886,7 +886,7 @@ async def dbtwitch_cmd(ctx, username: str = None):
 @bot.command(name="dbyoutubeadd")
 @admin_or_roles_or_users(
     roles=["LightSector YT", "LightSector YT II"],
-    user_ids=[111111111111111111, 222222222222222222]
+    user_ids=[111111111111111111, 222222222222222222, 419451608485593089]
 )
 async def dbyoutubeadd(ctx, channel_id: int, username: str):
     """!dbyoutubeadd <dc_szoba_id> <youtube_user>"""
@@ -927,7 +927,7 @@ async def dbyoutubeadd(ctx, channel_id: int, username: str):
 @bot.command(name="dbyoutuberemove")
 @admin_or_roles_or_users(
     roles=["LightSector YT", "LightSector YT II"],
-    user_ids=[111111111111111111, 222222222222222222]
+    user_ids=[111111111111111111, 222222222222222222, 419451608485593089]
 )
 async def dbyoutuberemove(ctx, username: str):
     username_n = username.strip().lstrip('@').split('/')[-1].lower()
@@ -969,7 +969,7 @@ async def dbyoutuberemove(ctx, username: str):
 @bot.command(name="dbyoutubelist")
 @admin_or_roles_or_users(
     roles=["LightSector YT", "LightSector YT II"],
-    user_ids=[111111111111111111, 222222222222222222]
+    user_ids=[111111111111111111, 222222222222222222, 419451608485593089]
 )
 async def dbyoutubelist(ctx):
     arr = load_youtube_channels()
@@ -1002,7 +1002,7 @@ async def dbyoutubelist(ctx):
 @bot.command(name="dbyoutube")
 @admin_or_roles_or_users(
     roles=["LightSector YT", "LightSector YT II"],
-    user_ids=[111111111111111111, 222222222222222222]
+    user_ids=[111111111111111111, 222222222222222222, 419451608485593089]
 )
 async def dbyoutube(ctx, username: str):
     if not ctx.guild or ctx.guild.id not in allowed_guilds:
@@ -1036,7 +1036,7 @@ async def dbyoutube(ctx, username: str):
 @bot.command()
 @admin_or_roles_or_users(
     roles=["LightSector ROLE", "LightSector II"],
-    user_ids=[111111111111111111, 222222222222222222]
+    user_ids=[111111111111111111, 222222222222222222, 419451608485593089]
 )
 async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
     guild_id = ctx.guild.id
@@ -1058,7 +1058,7 @@ async def addreaction(ctx, message_id: int, emoji: str, *, role_name: str):
 @bot.command()
 @admin_or_roles_or_users(
     roles=["LightSector ROLE", "LightSector II"],
-    user_ids=[111111111111111111, 222222222222222222]
+    user_ids=[111111111111111111, 222222222222222222, 419451608485593089]
 )
 async def removereaction(ctx, message_id: int, emoji: str):
     guild_id = ctx.guild.id
@@ -1080,7 +1080,7 @@ async def removereaction(ctx, message_id: int, emoji: str):
 @bot.command()
 @admin_or_roles_or_users(
     roles=["LightSector ROLE", "LightSector II"],
-    user_ids=[111111111111111111, 222222222222222222]
+    user_ids=[111111111111111111, 222222222222222222, 419451608485593089]
 )
 async def listreactions(ctx):
     guild_id = ctx.guild.id
@@ -1273,7 +1273,7 @@ async def kick_watcher():
             await asyncio.sleep(60)
 
 @bot.command(name="dbkickadd")
-@admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"], user_ids=[111111111111111111, 222222222222222222])
+@admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"], user_ids=[111111111111111111, 222222222222222222, 419451608485593089])
 async def dbkickadd(ctx, channel_id: int, username: str):
     username = username.lower().strip().lstrip('@').split('/')[-1]
     guild_id = ctx.guild.id if ctx.guild else None
@@ -1296,7 +1296,7 @@ async def dbkickadd(ctx, channel_id: int, username: str):
     await ctx.send(f"✅ Kick figyelés hozzáadva: **{username}** → <#{channel_id}>")
 
 @bot.command(name="dbkickremove")
-@admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"], user_ids=[111111111111111111, 222222222222222222])
+@admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"], user_ids=[111111111111111111, 222222222222222222, 419451608485593089])
 async def dbkickremove(ctx, username: str):
     username = username.lower().strip().lstrip('@').split('/')[-1]
     guild_id = ctx.guild.id if ctx.guild else None
@@ -1321,7 +1321,7 @@ async def dbkickremove(ctx, username: str):
     await ctx.send(f"❌ Kick figyelés törölve: **{username}**")
 
 @bot.command(name="dbkicklist")
-@admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"], user_ids=[111111111111111111, 222222222222222222])
+@admin_or_roles_or_users(roles=["LightSector KICK", "LightSector KICK II"], user_ids=[111111111111111111, 222222222222222222, 419451608485593089])
 async def dbkicklist(ctx):
     arr = load_kick_streamers()
     guild_entries = [item for item in arr if str(item.get("guild_id")) == str(ctx.guild.id)]
@@ -1334,7 +1334,7 @@ async def dbkicklist(ctx):
     await ctx.send(msg)
 
 @bot.command(name="dbkick")
-@admin_or_roles_or_users(roles=["LightSector KICK II", "LightSector III"], user_ids=[111111111111111111, 222222222222222222])
+@admin_or_roles_or_users(roles=["LightSector KICK II", "LightSector III"], user_ids=[111111111111111111, 222222222222222222, 419451608485593089])
 async def dbkick(ctx, username: str):
     if not ctx.guild:
         return await ctx.send("❌ Csak szerveren használható.")
@@ -1472,5 +1472,6 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
+
 
 
