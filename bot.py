@@ -647,7 +647,7 @@ async def gpt_image(prompt):
 # ------------------------
 @bot.command()
 @admin_or_roles_or_users(
-    roles=["LightSector GPT", "LightSector II"],
+    roles=["LightSector G", "LightSector II"],
     user_ids=[111111111111111111, 222222222222222222]
 )
 async def g(ctx, *, prompt: str):
@@ -1472,4 +1472,5 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
+
 
