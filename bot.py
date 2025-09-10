@@ -343,10 +343,10 @@ async def youtube_watcher():
                     except Exception as inner:
                         print(f"[youtube_watcher belső hiba] {inner}")
 
-            await asyncio.sleep(3600)  # 1 Óra
+            await asyncio.sleep(60)  # 1 minute
         except Exception as e:
             print(f"[youtube_watcher főhiba] {e}")
-            await asyncio.sleep(3600)  # 1 Óra
+            await asyncio.sleep(60)  # 1 minute
 
 # ------------------------
 # YouTube csatornák betöltése / mentése és állapot
@@ -1475,6 +1475,7 @@ if __name__ == "__main__":
         print("🔌 Leállítás kézi megszakítással.")
     except Exception as e:
         print(f"❌ Fő hibakör: {e}")
+
 
 
 
