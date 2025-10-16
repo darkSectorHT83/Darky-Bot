@@ -3,3 +3,4 @@ DARKY BOT parancslista:
 
 Szerver aktíválása:
 !dbactivate                                     - Aktiváláshoz leírás (Everyone)
+.
