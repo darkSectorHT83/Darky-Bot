@@ -277,7 +277,14 @@ async def twitch_watcher():
                                     f"📝 Cím: {title}"
                                 )
                                 try:
-                                    await channel.send(msg)
+                                    sent_msg = await channel.send(msg)
+
+# automatikus közzététel (csak announcement csatornán)
+if channel.is_news():
+    try:
+        await sent_msg.publish()
+    except Exception as e:
+        print(f"⚠️ Nem sikerült publisholni: {e}")
                                     print(f"➡️ Szöveges értesítés elküldve: {user_name} -> {channel_id} (guild: {guild_id})")
                                 except Exception as e:
                                     print(f"⚠️ Nem sikerült értesítést küldeni {user_name} -> {channel_id}: {e}")
