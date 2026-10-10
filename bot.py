@@ -1405,6 +1405,73 @@ async def get_json(request):
             data = {}
     return web.json_response(data, status=200, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=4))
 
+async def get_darksectorht_status(request):
+    """A DSAPP számára lekérdezi a darkSectorHT aktuális Twitch-állapotát.
+
+    API-/hálózati hiba esetén ok=false és HTTP 503 érkezik,
+    így az alkalmazás nem keveri össze a hibát az offline állapottal.
+    """
+    username = "darkSectorHT"
+    checked_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    cors_headers = {"Access-Control-Allow-Origin": "*", "Cache-Control": "no-store"}
+
+    if not TWITCH_CLIENT_ID or not TWITCH_ACCESS_TOKEN:
+        return web.json_response({
+            "ok": False,
+            "username": username,
+            "error": "A Twitch API hitelesítési adatai nincsenek beállítva.",
+            "checked_at": checked_at
+        }, status=503, headers=cors_headers)
+
+    url = f"https://api.twitch.tv/helix/streams?user_login={username}"
+    headers = {
+        "Client-ID": TWITCH_CLIENT_ID,
+        "Authorization": f"Bearer {TWITCH_ACCESS_TOKEN}"
+    }
+    try:
+        timeout = aiohttp.ClientTimeout(total=15)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status != 200:
+                    details = await resp.text()
+                    print(f"[darkSectorHT státusz] Twitch API hiba: {resp.status} - {details}")
+                    return web.json_response({
+                        "ok": False,
+                        "username": username,
+                        "error": f"Twitch API hiba ({resp.status}).",
+                        "checked_at": checked_at
+                    }, status=503, headers=cors_headers)
+                payload = await resp.json()
+
+        streams = payload.get("data")
+        if not isinstance(streams, list):
+            return web.json_response({
+                "ok": False, "username": username,
+                "error": "Érvénytelen Twitch API-válasz.", "checked_at": checked_at
+            }, status=503, headers=cors_headers)
+
+        stream = streams[0] if streams else None
+        result = {
+            "ok": True,
+            "username": username,
+            "online": stream is not None,
+            "checked_at": checked_at,
+            "title": stream.get("title", "") if stream else "",
+            "game_name": stream.get("game_name", "") if stream else "",
+            "viewer_count": stream.get("viewer_count", 0) if stream else 0,
+            "started_at": stream.get("started_at", "") if stream else "",
+            "url": f"https://www.twitch.tv/{username}"
+        }
+        return web.json_response(result, status=200, headers=cors_headers)
+    except Exception as exc:
+        print(f"[darkSectorHT státusz] Lekérdezési hiba: {exc}")
+        return web.json_response({
+            "ok": False,
+            "username": username,
+            "error": "A Twitch-státusz jelenleg nem kérdezhető le.",
+            "checked_at": checked_at
+        }, status=503, headers=cors_headers)
+
 async def get_twitch_state_json(request):
     if not os.path.exists(TWITCH_INTERNAL_FILE):
         return web.json_response([], status=200)
@@ -1440,6 +1507,7 @@ app = web.Application()
 app.router.add_get("/", handle)
 app.router.add_get("/reaction_roles.json", get_json)
 app.router.add_get("/twitch_streams_state.json", get_twitch_state_json)
+app.router.add_get("/darksectorht_status", get_darksectorht_status)
 app.router.add_get("/youtube_streams_state.json", get_youtube_state_json)
 app.router.add_get("/kick_streams_state.json", get_kick_state_json)
 
