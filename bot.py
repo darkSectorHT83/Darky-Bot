@@ -1539,94 +1539,60 @@ FORTNITE_SEASON_CHANNEL_ID = 999779676761366558
 FORTNITE_SEASON_URL = "https://fortnite.gg/season-countdown"
 
 async def fetch_fortnite_season_data():
-    """Próbálja a Fortnite.GG-t, 403 esetén pedig tartalék szezonoldalt használ."""
-    sources = [
-        (FORTNITE_SEASON_URL, "Fortnite.GG"),
-        ("https://fortnitecountdown.gg/", "FortniteCountdown.gg"),
-    ]
+    """Lekéri a Fortnite.GG oldalt. Csak olyan adatot jelenít meg, amit ténylegesen megtalál."""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/131.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
+                      "(KHTML, like Gecko) Chrome/125.0 Safari/537.36"
     }
     timeout = aiohttp.ClientTimeout(total=20)
-    errors = []
     async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-        for url, source_name in sources:
-            try:
-                async with session.get(url, allow_redirects=True) as response:
-                    if response.status != 200:
-                        errors.append(f"{source_name} HTTP {response.status}")
-                        continue
-                    page = await response.text()
-                visible = re.sub(r"(?is)<(script|style|noscript).*?>.*?</\1>", " ", page)
-                visible = re.sub(r"(?s)<[^>]+>", " ", visible)
-                visible = html.unescape(visible)
-                visible = re.sub(r"\s+", " ", visible).strip()
+        async with session.get(FORTNITE_SEASON_URL, allow_redirects=True) as response:
+            if response.status != 200:
+                raise RuntimeError(f"Fortnite.GG HTTP {response.status}")
+            page = await response.text()
 
-                season = None
-                for pattern in (
-                    r"\bChapter\s*\d+\s*Season\s*\d+\b",
-                    r"\bChapter\s*\d+\s*[-:]\s*Season\s*\d+\b",
-                ):
-                    match = re.search(pattern, visible, re.IGNORECASE)
-                    if match:
-                        season = match.group(0)
-                        break
+    # Az oldalszkriptekből nem próbálunk találgatott értékeket kiolvasni.
+    visible = re.sub(r"(?is)<(script|style|noscript).*?>.*?</\1>", " ", page)
+    visible = re.sub(r"(?s)<[^>]+>", " ", visible)
+    visible = html.unescape(visible)
+    visible = re.sub(r"\s+", " ", visible).strip()
 
-                # A tartalék oldalon jellemzően: "ends on Sunday, November 1, 2026 at 08:00 UTC".
-                end_date = None
-                date_patterns = (
-                    r"ends? on [A-Za-z]+,?\s+([A-Za-z]+\s+\d{1,2},?\s+\d{4})(?:\s+at\s+\d{1,2}:\d{2}\s+UTC)?",
-                    r"(?:Season ends|Season end|Ends on)\s*[:\-]?\s*([A-Za-z]+\s+\d{1,2},?\s+\d{4})",
-                    r"(?:Season ends|Season end|Ends on)\s*[:\-]?\s*(\d{1,2}\s+[A-Za-z]+\s+\d{4})",
-                )
-                for pattern in date_patterns:
-                    match = re.search(pattern, visible, re.IGNORECASE)
-                    if match:
-                        end_date = match.group(1).strip()
-                        break
+    season = None
+    for pattern in (
+        r"\bChapter\s*\d+\s*Season\s*\d+\b",
+        r"\bChapter\s*\d+\s*[-:]\s*Season\s*\d+\b",
+    ):
+        m = re.search(pattern, visible, re.IGNORECASE)
+        if m:
+            season = m.group(0)
+            break
 
-                progress = None
-                for progress_pattern in (
-                    r"progress(?: is)? at\s+(\d{1,3}(?:\.\d+)?)\s*%",
-                    r"season progress\s*(?:is|:)??\s*(\d{1,3}(?:\.\d+)?)\s*%",
-                    r"(\d{1,3}(?:\.\d+)?)\s*%\s*(?:complete|completed)",
-                ):
-                    progress_match = re.search(progress_pattern, visible, re.IGNORECASE)
-                    if progress_match:
-                        progress = max(0.0, min(100.0, float(progress_match.group(1))))
-                        break
+    # Lehetséges, szövegként megjelenített szezonvégi dátumok.
+    end_date = None
+    date_patterns = [
+        r"(?:Season ends|Season end|Ends on|Szezon vége|Várható vége)\s*[:\-]?\s*"
+        r"([A-Za-z]+\s+\d{1,2},?\s+\d{4})",
+        r"(?:Season ends|Season end|Ends on|Szezon vége|Várható vége)\s*[:\-]?\s*"
+        r"(\d{1,2}\s+[A-Za-z]+\s+\d{4})",
+    ]
+    for pattern in date_patterns:
+        m = re.search(pattern, visible, re.IGNORECASE)
+        if m:
+            end_date = m.group(1).strip()
+            break
 
-                if season or end_date:
-                    return {"season": season, "end_date": end_date, "progress": progress, "page_text": visible,
-                            "source_name": source_name, "source_url": url}
-                errors.append(f"{source_name}: nem találtam szezonnevet vagy dátumot a HTML-ben")
-            except Exception as exc:
-                errors.append(f"{source_name}: {type(exc).__name__}: {exc}")
-
-    raise RuntimeError("Egyik Fortnite-adatforrás sem érhető el: " + " | ".join(errors))
+    # Ha az adatokat az oldal JavaScriptből tölti be, a HTML nem feltétlenül tartalmazza őket.
+    # Ilyenkor a bot nem talál ki visszaszámlálást: ezt világosan jelzi a panel.
+    return {"season": season, "end_date": end_date, "page_text": visible}
 
 
 def make_fortnite_season_embed(data):
     now = datetime.now(timezone.utc)
     season = data.get("season")
     end_date = data.get("end_date")
-    end_dt = None
-    if end_date:
-        for date_format in ("%B %d, %Y", "%B %d %Y", "%d %B %Y"):
-            try:
-                end_dt = datetime.strptime(end_date.replace(",", ""), date_format.replace(",", "")).replace(tzinfo=timezone.utc)
-                # A szezonváltás szokásos időpontja 08:00 UTC; a dátum önmagában éjfélt jelentene.
-                end_dt = end_dt.replace(hour=8, minute=0, second=0, microsecond=0)
-                break
-            except ValueError:
-                continue
-
     embed = discord.Embed(
         title="👑 BATTLE ROYALE • SZEZONFIGYELŐ",
-        url=data.get("source_url", FORTNITE_SEASON_URL),
+        url=FORTNITE_SEASON_URL,
         color=discord.Color.from_rgb(25, 210, 255),
         timestamp=now,
     )
@@ -1634,44 +1600,31 @@ def make_fortnite_season_embed(data):
         embed.description = (
             f"# {season}\n"
             "**A következő nagy kalandig…**\n"
-            f"Szezonfigyelő panel a {data.get('source_name', 'Fortnite.GG')} adatai alapján."
+            "Szezonfigyelő panel a Fortnite.GG adatai alapján."
         )
     else:
-        embed.description = "A szezon neve nem volt kiolvasható az adatforrásból."
+        embed.description = (
+            "A Fortnite.GG oldal betöltődött, de a szezon nevét nem sikerült "
+            "megbízhatóan kiolvasni a HTML-ből. Lehetséges, hogy az oldal JavaScriptből tölti be az adatokat."
+        )
 
-    if end_dt:
-        # Discord dinamikus relatív időbélyeg: a kliens folyamatosan frissíti,
-        # ezért nem kell a botnak másodpercenként szerkesztenie az embedet.
-        end_unix = int(end_dt.timestamp())
-        countdown = f"<t:{end_unix}:R>"
-        end_display = f"<t:{end_unix}:F>"
-        time_value = f"**Visszaszámlálás:** {countdown}\n**Várható szezonvég:** {end_display}"
-    else:
-        time_value = f"**Várható szezonvég:** {end_date}" if end_date else "A szezonvégi időpont nem volt kiolvasható."
-
-    embed.add_field(name="⏳ HÁTRALÉVŐ IDŐ A SZEZON VÉGÉIG", value=time_value, inline=False)
-
-    progress = data.get("progress")
-    if progress is None:
-        progress_match = re.search(r"progress(?: is)? at\s+(\d{1,3}(?:\.\d+)?)\s*%", data.get("page_text", ""), re.IGNORECASE)
-        if progress_match:
-            progress = max(0.0, min(100.0, float(progress_match.group(1))))
-    if progress is not None:
-        filled = round(progress / 10)
-        bar = "🟦" * filled + "⬛" * (10 - filled)
-        progress_value = f"**{progress:.1f}%**\n{bar}"
-    elif end_dt:
-        # Ha a százalékot nem adja meg az oldal, a dátum alapján nem találunk ki hamis értéket.
-        progress_value = "Az adatforrás nem adott megbízható százalékos értéket."
-    else:
-        progress_value = "A szezonelőrehaladás jelenleg nem elérhető."
-    embed.add_field(name="🌈 SZEZONELŐREHALADÁS", value=progress_value, inline=False)
     embed.add_field(
-        name="📅 ADATFORRÁS",
-        value=f"[{data.get('source_name', 'Fortnite.GG')} – Season Countdown]({data.get('source_url', FORTNITE_SEASON_URL)})",
+        name="⏳ HÁTRALÉVŐ IDŐ A SZEZON VÉGÉIG",
+        value=(f"**Várható szezonvég:** {end_date}" if end_date else
+               "A pontos szezonvégi időpont nem volt kiolvasható az oldal HTML-jéből."),
         inline=False,
     )
-    embed.set_footer(text="Fortnite szezonfigyelő • Frissítéskor az adatforrás újra lekérdezésre kerül")
+    embed.add_field(
+        name="🌈 SZEZONELŐREHALADÁS",
+        value="A százalékos érték csak akkor jelenik meg, ha az adatforrásból megbízhatóan kiolvasható.",
+        inline=False,
+    )
+    embed.add_field(
+        name="📅 ADATFORRÁS",
+        value=f"[Fortnite.GG – Season Countdown]({FORTNITE_SEASON_URL})",
+        inline=False,
+    )
+    embed.set_footer(text="Fortnite szezonfigyelő • A frissítés az adatforrást újra lekéri")
     return embed
 
 
@@ -1686,11 +1639,9 @@ class FortniteSeasonView(discord.ui.View):
         custom_id="fortnite_season_refresh",
     )
     async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        configured_locations = load_fortnite_watch_server_channels()
-        location_key = (interaction.guild_id, interaction.channel_id)
-        if location_key not in configured_locations:
+        if interaction.channel_id != FORTNITE_SEASON_CHANNEL_ID:
             await interaction.response.send_message(
-                "Ez a csatorna nincs beállítva a visszaszamlalo_server.txt fájlban.",
+                f"Ezt a panelt ebben a csatornában használd: <#{FORTNITE_SEASON_CHANNEL_ID}>",
                 ephemeral=True,
             )
             return
@@ -1710,95 +1661,49 @@ class FortniteSeasonView(discord.ui.View):
             )
 
 
-@bot.tree.command(name="szezon", description="Fortnite szezon-visszaszámláló panel küldése ebbe a csatornába")
+@bot.tree.command(name="szezon", description="Privát Fortnite szezon-visszaszámláló panel")
 @app_commands.guild_only()
 async def fortnite_szezon_command(interaction: discord.Interaction):
-    """Parancsra nyilvánosan kiküldi a panelt az engedélyezett csatornába."""
-    configured_locations = load_fortnite_watch_server_channels()
-    location_key = (interaction.guild_id, interaction.channel_id)
-    if location_key not in configured_locations:
+    # A parancsot csak a megadott csatornában engedjük.
+    if interaction.channel_id != FORTNITE_SEASON_CHANNEL_ID:
         await interaction.response.send_message(
-            "❌ Ez a csatorna nincs beállítva a `visszaszamlalo_server.txt` fájlban.",
+            f"A parancsot ebben a csatornában használd: <#{FORTNITE_SEASON_CHANNEL_ID}>",
             ephemeral=True,
         )
         return
 
-    display_name = configured_locations[location_key]
     await interaction.response.defer(ephemeral=True, thinking=True)
     try:
-        print(f"🎮 /szezon parancs: {display_name} | szerver={interaction.guild_id} | csatorna={interaction.channel_id} | kérte={interaction.user} ({interaction.user.id})")
         data = await fetch_fortnite_season_data()
-        await interaction.channel.send(embed=make_fortnite_season_embed(data), view=FortniteSeasonView())
-        await interaction.followup.send("✅ A Fortnite-szezonszámláló panelt nyilvánosan elküldtem ebbe a csatornába.", ephemeral=True)
-        print(f"✅ /szezon panel elküldve: {display_name}")
-    except Exception as e:
-        print(f"❌ /szezon parancs hiba ({display_name}): {type(e).__name__}: {e}")
         await interaction.followup.send(
-            "⚠️ Nem sikerült elküldeni a Fortnite-panelt. Nézd meg a Render Logs naplót.",
-            ephemeral=True,
-        )
-
-
-
-@bot.command(name="season")
-@commands.guild_only()
-async def fortnite_season_text_command(ctx: commands.Context):
-    """A Fortnite-szezonszámláló panel nyilvános kiküldése !season parancsra."""
-    configured_locations = load_fortnite_watch_server_channels()
-    location_key = (ctx.guild.id, ctx.channel.id)
-    if location_key not in configured_locations:
-        print(
-            f"❌ !season nem engedélyezett helyen: "
-            f"szerver={ctx.guild.id} | csatorna={ctx.channel.id} | kérte={ctx.author} ({ctx.author.id})"
-        )
-        await ctx.reply(
-            "❌ Ez a csatorna nincs beállítva a `visszaszamlalo_server.txt` fájlban.",
-            mention_author=False,
-        )
-        return
-
-    display_name = configured_locations[location_key]
-    try:
-        print(
-            f"🎮 !season parancs: {display_name} | "
-            f"szerver={ctx.guild.id} | csatorna={ctx.channel.id} | "
-            f"kérte={ctx.author} ({ctx.author.id})"
-        )
-        async with ctx.typing():
-            data = await fetch_fortnite_season_data()
-        await ctx.send(
             embed=make_fortnite_season_embed(data),
             view=FortniteSeasonView(),
+            ephemeral=True,
         )
-        print(f"✅ !season panel elküldve: {display_name}")
     except Exception as e:
-        print(f"❌ !season parancs hiba ({display_name}): {type(e).__name__}: {e}")
-        traceback.print_exc()
-        await ctx.reply(
-            "⚠️ Nem sikerült elküldeni a Fortnite-panelt. Nézd meg a Render Logs naplót.",
-            mention_author=False,
+        print(f"[Fortnite szezon lekérés] {e}")
+        await interaction.followup.send(
+            "⚠️ Nem sikerült lekérni a Fortnite.GG szezonadatait. "
+            "Az oldal átmenetileg nem érhető el, vagy megváltozott a szerkezete.",
+            ephemeral=True,
         )
 
 
 
 # =====================================================================
-# AUTOMATIKUS FORTNITE PANEL – visszaszamlalo_server.txt
-# Formátum:
-# NÉV
-# DISCORD_GUILD_ID | DISCORD_CHANNEL_ID
-# NÉV
-# DISCORD_GUILD_ID | DISCORD_CHANNEL_ID
-# A felhasználók a visszaszamlalo.txt fájlban szerepelnek.
+# AUTOMATIKUS FORTNITE PANEL ÜZENETRE – ID-lista a visszaszamlalo.txt fájlból
+# A fájl formátuma: DISCORD_USER_ID | megjegyzés / név
+# A név csak megjegyzés; a bot kizárólag a sor elején álló ID-t használja.
+# A botkód mellett lévő visszaszamlalo.txt fájlt olvassa.
 # =====================================================================
 
 FORTNITE_WATCH_IDS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "visszaszamlalo.txt")
-FORTNITE_WATCH_SERVER_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "visszaszamlalo_server.txt")
 FORTNITE_WATCH_COOLDOWN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "visszaszamlalo_cooldowns.json")
 FORTNITE_WATCH_COOLDOWN_SECONDS = 60 * 60  # felhasználónként óránként legfeljebb egy panel
 
 
 def load_fortnite_watch_ids():
-    """Felhasználói ID-k beolvasása a régi 'ID | név' formátumú TXT-ből."""
+    """ID-k beolvasása a 'ID | megjegyzés' formátumú TXT-ből."""
     ids = set()
     try:
         with open(FORTNITE_WATCH_IDS_FILE, "r", encoding="utf-8-sig") as f:
@@ -1806,43 +1711,15 @@ def load_fortnite_watch_ids():
                 line = line.strip()
                 if not line or line.startswith("#"):
                     continue
+                # A megjegyzés a | után van, nem vesz részt az ellenőrzésben.
                 user_id_text = line.split("|", 1)[0].strip()
                 if user_id_text.isdigit():
                     ids.add(int(user_id_text))
     except FileNotFoundError:
-        print(f"⚠️ Nem található {FORTNITE_WATCH_IDS_FILE}")
+        print(f"⚠️ Nem található {FORTNITE_WATCH_IDS_FILE}. Hozd létre a bot mellett.")
     except Exception as e:
         print(f"⚠️ visszaszamlalo.txt olvasási hiba: {e}")
     return ids
-
-
-def load_fortnite_watch_server_channels():
-    """A név után következő sorból betölti a guild ID-t és channel ID-t."""
-    mapping = {}
-    try:
-        with open(FORTNITE_WATCH_SERVER_FILE, "r", encoding="utf-8-sig") as f:
-            lines = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
-        i = 0
-        while i < len(lines):
-            name = lines[i]
-            i += 1
-            if i >= len(lines):
-                print(f"⚠️ {FORTNITE_WATCH_SERVER_FILE}: nincs ID-sor ehhez: {name}")
-                break
-            id_line = lines[i]
-            i += 1
-            parts = [part.strip() for part in id_line.split("|", 1)]
-            if len(parts) != 2 or not parts[0].isdigit() or not parts[1].isdigit():
-                print(f"⚠️ {FORTNITE_WATCH_SERVER_FILE}: hibás szerver/csatorna ID '{name}': {id_line!r} – kihagyva")
-                continue
-            guild_id, channel_id = int(parts[0]), int(parts[1])
-            mapping[(guild_id, channel_id)] = name
-            print(f"🎯 Visszaszámláló hely beállítva: {name} | szerver={guild_id} | csatorna={channel_id}")
-    except FileNotFoundError:
-        print(f"❌ Nem található {FORTNITE_WATCH_SERVER_FILE}. Tedd a bot.py mellé!")
-    except Exception as e:
-        print(f"❌ visszaszamlalo_server.txt olvasási hiba: {e}")
-    return mapping
 
 
 def load_fortnite_watch_cooldowns():
@@ -1871,46 +1748,41 @@ _fortnite_watch_lock = asyncio.Lock()
 
 @bot.listen("on_message")
 async def fortnite_season_auto_on_message(message: discord.Message):
-    """A megadott szerveren/csatornában, engedélyezett felhasználó üzenetére panelt küld."""
+    """A TXT-ben szereplő felhasználók üzenetére nyilvános szezonpanelt küld."""
     if message.author.bot or message.guild is None:
         return
-
-    configured_locations = load_fortnite_watch_server_channels()
-    location_key = (message.guild.id, message.channel.id)
-    if location_key not in configured_locations:
+    if message.channel.id != FORTNITE_SEASON_CHANNEL_ID:
         return
 
-    allowed_ids = load_fortnite_watch_ids()
-    if not allowed_ids:
-        print("⚠️ A visszaszamlalo.txt nem tartalmaz érvényes felhasználói ID-t.")
-        return
+    allowed_ids = load_fortnite_watch_ids()  # minden üzenetnél újraolvassa, így a TXT módosítása érvényesül
     if message.author.id not in allowed_ids:
         return
 
-    display_name = configured_locations[location_key]
     now = datetime.now(timezone.utc).timestamp()
-    user_key = f"{message.guild.id}:{message.channel.id}:{message.author.id}"
+    user_key = str(message.author.id)
 
     async with _fortnite_watch_lock:
         last_sent = float(_fortnite_watch_cooldowns.get(user_key, 0) or 0)
         if now - last_sent < FORTNITE_WATCH_COOLDOWN_SECONDS:
-            remaining = int(FORTNITE_WATCH_COOLDOWN_SECONDS - (now - last_sent))
-            print(f"⏳ Fortnite panel cooldown: {message.author} | {display_name} | még {remaining} mp")
             return
-        # Csak sikeres küldés után rögzítjük a cooldown-t.
+        # Előre mentjük, hogy pár gyors egymás utáni üzenet se küldjön több panelt.
         _fortnite_watch_cooldowns[user_key] = now
+        save_fortnite_watch_cooldowns(_fortnite_watch_cooldowns)
 
     try:
-        print(f"🎮 Fortnite panel készítése: név={display_name}, felhasználó={message.author} ({message.author.id}), szerver={message.guild.id}, csatorna={message.channel.id}")
         data = await fetch_fortnite_season_data()
-        await message.channel.send(embed=make_fortnite_season_embed(data), view=FortniteSeasonView())
-        save_fortnite_watch_cooldowns(_fortnite_watch_cooldowns)
-        print(f"✅ Fortnite panel elküldve: {display_name} | {message.author} ({message.author.id})")
+        await message.channel.send(
+            embed=make_fortnite_season_embed(data),
+            view=FortniteSeasonView(),
+            delete_after=600,  # Csak ezt a bot által küldött automatikus Fortnite-panelt törli 10 perc után.
+        )
+        print(f"🎮 Fortnite panel elküldve {message.author} ({message.author.id}) üzenetére.")
     except Exception as e:
+        # Küldési hiba esetén visszaállítjuk a cooldown-t, hogy később újra próbálkozhasson.
         async with _fortnite_watch_lock:
             _fortnite_watch_cooldowns.pop(user_key, None)
             save_fortnite_watch_cooldowns(_fortnite_watch_cooldowns)
-        print(f"❌ Automatikus Fortnite panel hiba ({display_name}): {type(e).__name__}: {e}")
+        print(f"⚠️ Automatikus Fortnite panel hiba: {e}")
 
 # ------------------------
 # Main indítás (Render kompatibilis)
