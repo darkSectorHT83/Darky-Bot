@@ -1615,15 +1615,12 @@ async def fetch_fortnite_season_data():
                         break
 
                 end_date = None
-                # A szezonvég dátumát keressük először, nem az oldal más részén lévő dátumot.
+                # A szezonvég dátumát keressük először.
                 date_patterns = (
-                    r"ends? on\\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\\s+"
-                    r"([A-Za-z]+\\s+\\d{1,2},?\\s+\\d{4})",
-                    r"(?:season\\s*(?:ends?|end date)|seasonEndDate|endDate).{0,30}?"
-                    r"([A-Za-z]+\\s+\\d{1,2},?\\s+\\d{4})",
-                    r"(?:season\\s*(?:ends?|end date)|ends? on).{0,30}?"
-                    r"(\\d{1,2}\\s+[A-Za-z]+\\s+\\d{4})",
-                    r"(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z?)",
+                    r"ends? on\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s+([A-Za-z]+\s+\d{1,2},?\s+\d{4})",
+                    r"(?:season\s*(?:ends?|end date)|seasonEndDate|endDate).{0,80}?([A-Za-z]+\s+\d{1,2},?\s+\d{4})",
+                    r"(?:season\s*(?:ends?|end date)|ends? on).{0,80}?(\d{1,2}\s+[A-Za-z]+\s+\d{4})",
+                    r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)",
                 )
                 for pattern in date_patterns:
                     match = re.search(pattern, searchable, re.IGNORECASE)
@@ -1642,7 +1639,7 @@ async def fetch_fortnite_season_data():
                         break
 
                 if season or end_date:
-                    print(f"✅ Fortnite adatforrás: {source_name}; szezon={season}; dátum={end_date}; haladás={progress}")
+                    print(f"✅ Fortnite szezonadat frissítve: szezon={season}; dátum={end_date}; haladás={progress}")
                     return {
                         "season": season,
                         "end_date": end_date,
@@ -1683,7 +1680,6 @@ def make_fortnite_season_embed(data):
     source_url = data.get("source_url", FORTNITE_SEASON_URL)
     embed = discord.Embed(
         title="👑 BATTLE ROYALE • SZEZONFIGYELŐ",
-        url=source_url,
         color=discord.Color.from_rgb(25, 210, 255),
         timestamp=now,
     )
@@ -1712,7 +1708,7 @@ def make_fortnite_season_embed(data):
     else:
         progress_value = "A százalékos érték nem volt megbízhatóan kiolvasható az adatforrásból."
     embed.add_field(name="🌈 SZEZONELŐREHALADÁS", value=progress_value, inline=False)
-    embed.set_footer(text="Fortnite szezonfigyelő • Frissítéskor újra lekéri az adatokat")
+    embed.set_footer(text="Fortnite szezonfigyelő")
     return embed
 
 
@@ -1743,7 +1739,7 @@ class FortniteSeasonView(discord.ui.View):
         except Exception as e:
             print(f"[Fortnite szezon frissítés] {e}")
             await interaction.followup.send(
-                "⚠️ Nem sikerült frissíteni a Fortnite.GG adatait. Próbáld újra később.",
+                "⚠️ Most nem sikerült frissíteni a szezonadatokat. Próbáld újra később.",
                 ephemeral=True,
             )
 
