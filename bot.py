@@ -1708,8 +1708,39 @@ def make_fortnite_season_embed(data):
     else:
         progress_value = "A százalékos érték nem volt megbízhatóan kiolvasható az adatforrásból."
     embed.add_field(name="🌈 SZEZONELŐREHALADÁS", value=progress_value, inline=False)
-    embed.set_footer(text="Fortnite szezonfigyelő")
     return embed
+
+
+async def send_fortnite_live_panel(destination, data, *, reference_message=None):
+    """Küld egy szezonpanelt, másodpercenként frissíti 60 másodpercig, majd törli."""
+    panel = await destination.send(
+        embed=make_fortnite_season_embed(data),
+        view=FortniteSeasonView(),
+        reference=reference_message,
+        mention_author=False if reference_message else None,
+    )
+
+    async def update_for_one_minute():
+        try:
+            # A weboldalt csak egyszer kérjük le; a helyben tárolt szezonvégi dátumból
+            # számoljuk újra a visszaszámlálót minden másodpercben.
+            for _ in range(60):
+                await asyncio.sleep(1)
+                await panel.edit(embed=make_fortnite_season_embed(data), view=FortniteSeasonView())
+        except (discord.NotFound, discord.Forbidden):
+            return
+        except Exception as exc:
+            print(f"[Fortnite számláló frissítés] {type(exc).__name__}: {exc}")
+        finally:
+            try:
+                await panel.delete()
+            except (discord.NotFound, discord.Forbidden):
+                pass
+            except Exception as exc:
+                print(f"[Fortnite panel törlés] {type(exc).__name__}: {exc}")
+
+    asyncio.create_task(update_for_one_minute())
+    return panel
 
 
 class FortniteSeasonView(discord.ui.View):
@@ -1761,11 +1792,7 @@ async def fortnite_season_text_command(ctx: commands.Context):
 
     try:
         data = await fetch_fortnite_season_data()
-        await ctx.send(
-            embed=make_fortnite_season_embed(data),
-            view=FortniteSeasonView(),
-            delete_after=600,
-        )
+        await send_fortnite_live_panel(ctx.channel, data, reference_message=ctx.message)
         print(f"🎮 !season panel elküldve: {ctx.author} ({ctx.author.id})")
     except Exception as e:
         print(f"⚠️ !season parancs hiba: {type(e).__name__}: {e}")
@@ -1887,11 +1914,7 @@ async def fortnite_season_auto_on_message(message: discord.Message):
 
     try:
         data = await fetch_fortnite_season_data()
-        await message.channel.send(
-            embed=make_fortnite_season_embed(data),
-            view=FortniteSeasonView(),
-            delete_after=600,  # Csak ezt a bot által küldött automatikus Fortnite-panelt törli 10 perc után.
-        )
+        await send_fortnite_live_panel(message.channel, data, reference_message=message)
         print(f"🎮 Fortnite panel elküldve {message.author} ({message.author.id}) üzenetére.")
     except Exception as e:
         # Küldési hiba esetén visszaállítjuk a cooldown-t, hogy később újra próbálkozhasson.
