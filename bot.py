@@ -1689,6 +1689,97 @@ async def fortnite_szezon_command(interaction: discord.Interaction):
         )
 
 
+
+# =====================================================================
+# AUTOMATIKUS FORTNITE PANEL ÜZENETRE – ID-lista a visszaszamlalo.txt fájlból
+# A fájl formátuma: DISCORD_USER_ID | megjegyzés / név
+# A név csak megjegyzés; a bot kizárólag a sor elején álló ID-t használja.
+# A botkód mellett lévő visszaszamlalo.txt fájlt olvassa.
+# =====================================================================
+
+FORTNITE_WATCH_IDS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "visszaszamlalo.txt")
+FORTNITE_WATCH_COOLDOWN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "visszaszamlalo_cooldowns.json")
+FORTNITE_WATCH_COOLDOWN_SECONDS = 60 * 60  # felhasználónként óránként legfeljebb egy panel
+
+
+def load_fortnite_watch_ids():
+    """ID-k beolvasása a 'ID | megjegyzés' formátumú TXT-ből."""
+    ids = set()
+    try:
+        with open(FORTNITE_WATCH_IDS_FILE, "r", encoding="utf-8-sig") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                # A megjegyzés a | után van, nem vesz részt az ellenőrzésben.
+                user_id_text = line.split("|", 1)[0].strip()
+                if user_id_text.isdigit():
+                    ids.add(int(user_id_text))
+    except FileNotFoundError:
+        print(f"⚠️ Nem található {FORTNITE_WATCH_IDS_FILE}. Hozd létre a bot mellett.")
+    except Exception as e:
+        print(f"⚠️ visszaszamlalo.txt olvasási hiba: {e}")
+    return ids
+
+
+def load_fortnite_watch_cooldowns():
+    try:
+        with open(FORTNITE_WATCH_COOLDOWN_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+    except Exception as e:
+        print(f"⚠️ Visszaszámláló cooldown betöltési hiba: {e}")
+        return {}
+
+
+def save_fortnite_watch_cooldowns(data):
+    try:
+        with open(FORTNITE_WATCH_COOLDOWN_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"⚠️ Visszaszámláló cooldown mentési hiba: {e}")
+
+
+_fortnite_watch_cooldowns = load_fortnite_watch_cooldowns()
+_fortnite_watch_lock = asyncio.Lock()
+
+
+@bot.listen("on_message")
+async def fortnite_season_auto_on_message(message: discord.Message):
+    """A TXT-ben szereplő felhasználók üzenetére nyilvános szezonpanelt küld."""
+    if message.author.bot or message.guild is None:
+        return
+    if message.channel.id != FORTNITE_SEASON_CHANNEL_ID:
+        return
+
+    allowed_ids = load_fortnite_watch_ids()  # minden üzenetnél újraolvassa, így a TXT módosítása érvényesül
+    if message.author.id not in allowed_ids:
+        return
+
+    now = datetime.now(timezone.utc).timestamp()
+    user_key = str(message.author.id)
+
+    async with _fortnite_watch_lock:
+        last_sent = float(_fortnite_watch_cooldowns.get(user_key, 0) or 0)
+        if now - last_sent < FORTNITE_WATCH_COOLDOWN_SECONDS:
+            return
+        # Előre mentjük, hogy pár gyors egymás utáni üzenet se küldjön több panelt.
+        _fortnite_watch_cooldowns[user_key] = now
+        save_fortnite_watch_cooldowns(_fortnite_watch_cooldowns)
+
+    try:
+        data = await fetch_fortnite_season_data()
+        await message.channel.send(embed=make_fortnite_season_embed(data), view=FortniteSeasonView())
+        print(f"🎮 Fortnite panel elküldve {message.author} ({message.author.id}) üzenetére.")
+    except Exception as e:
+        # Küldési hiba esetén visszaállítjuk a cooldown-t, hogy később újra próbálkozhasson.
+        async with _fortnite_watch_lock:
+            _fortnite_watch_cooldowns.pop(user_key, None)
+            save_fortnite_watch_cooldowns(_fortnite_watch_cooldowns)
+        print(f"⚠️ Automatikus Fortnite panel hiba: {e}")
+
 # ------------------------
 # Main indítás (Render kompatibilis)
 # ------------------------
