@@ -1588,8 +1588,19 @@ async def fetch_fortnite_season_data():
                         end_date = match.group(1).strip()
                         break
 
+                progress = None
+                for progress_pattern in (
+                    r"progress(?: is)? at\s+(\d{1,3}(?:\.\d+)?)\s*%",
+                    r"season progress\s*(?:is|:)??\s*(\d{1,3}(?:\.\d+)?)\s*%",
+                    r"(\d{1,3}(?:\.\d+)?)\s*%\s*(?:complete|completed)",
+                ):
+                    progress_match = re.search(progress_pattern, visible, re.IGNORECASE)
+                    if progress_match:
+                        progress = max(0.0, min(100.0, float(progress_match.group(1))))
+                        break
+
                 if season or end_date:
-                    return {"season": season, "end_date": end_date, "page_text": visible,
+                    return {"season": season, "end_date": end_date, "progress": progress, "page_text": visible,
                             "source_name": source_name, "source_url": url}
                 errors.append(f"{source_name}: nem találtam szezonnevet vagy dátumot a HTML-ben")
             except Exception as exc:
@@ -1602,6 +1613,17 @@ def make_fortnite_season_embed(data):
     now = datetime.now(timezone.utc)
     season = data.get("season")
     end_date = data.get("end_date")
+    end_dt = None
+    if end_date:
+        for date_format in ("%B %d, %Y", "%B %d %Y", "%d %B %Y"):
+            try:
+                end_dt = datetime.strptime(end_date.replace(",", ""), date_format.replace(",", "")).replace(tzinfo=timezone.utc)
+                # A szezonváltás szokásos időpontja 08:00 UTC; a dátum önmagában éjfélt jelentene.
+                end_dt = end_dt.replace(hour=8, minute=0, second=0, microsecond=0)
+                break
+            except ValueError:
+                continue
+
     embed = discord.Embed(
         title="👑 BATTLE ROYALE • SZEZONFIGYELŐ",
         url=data.get("source_url", FORTNITE_SEASON_URL),
@@ -1615,28 +1637,42 @@ def make_fortnite_season_embed(data):
             f"Szezonfigyelő panel a {data.get('source_name', 'Fortnite.GG')} adatai alapján."
         )
     else:
-        embed.description = (
-            "A Fortnite.GG oldal betöltődött, de a szezon nevét nem sikerült "
-            "megbízhatóan kiolvasni a HTML-ből. Lehetséges, hogy az oldal JavaScriptből tölti be az adatokat."
-        )
+        embed.description = "A szezon neve nem volt kiolvasható az adatforrásból."
 
-    embed.add_field(
-        name="⏳ HÁTRALÉVŐ IDŐ A SZEZON VÉGÉIG",
-        value=(f"**Várható szezonvég:** {end_date}" if end_date else
-               "A pontos szezonvégi időpont nem volt kiolvasható az oldal HTML-jéből."),
-        inline=False,
-    )
-    embed.add_field(
-        name="🌈 SZEZONELŐREHALADÁS",
-        value="A százalékos érték csak akkor jelenik meg, ha az adatforrásból megbízhatóan kiolvasható.",
-        inline=False,
-    )
+    if end_dt:
+        seconds_left = max(0, int((end_dt - now).total_seconds()))
+        days, rem = divmod(seconds_left, 86400)
+        hours, rem = divmod(rem, 3600)
+        minutes, seconds = divmod(rem, 60)
+        countdown = f"**{days} nap {hours} óra {minutes} perc {seconds} mp**"
+        end_display = end_dt.strftime("%Y. %B %d. %H:%M UTC")
+        time_value = f"{countdown}\n**Várható szezonvég:** {end_display}"
+    else:
+        time_value = f"**Várható szezonvég:** {end_date}" if end_date else "A szezonvégi időpont nem volt kiolvasható."
+
+    embed.add_field(name="⏳ HÁTRALÉVŐ IDŐ A SZEZON VÉGÉIG", value=time_value, inline=False)
+
+    progress = data.get("progress")
+    if progress is None:
+        progress_match = re.search(r"progress(?: is)? at\s+(\d{1,3}(?:\.\d+)?)\s*%", data.get("page_text", ""), re.IGNORECASE)
+        if progress_match:
+            progress = max(0.0, min(100.0, float(progress_match.group(1))))
+    if progress is not None:
+        filled = round(progress / 10)
+        bar = "🟦" * filled + "⬛" * (10 - filled)
+        progress_value = f"**{progress:.1f}%**\n{bar}"
+    elif end_dt:
+        # Ha a százalékot nem adja meg az oldal, a dátum alapján nem találunk ki hamis értéket.
+        progress_value = "Az adatforrás nem adott megbízható százalékos értéket."
+    else:
+        progress_value = "A szezonelőrehaladás jelenleg nem elérhető."
+    embed.add_field(name="🌈 SZEZONELŐREHALADÁS", value=progress_value, inline=False)
     embed.add_field(
         name="📅 ADATFORRÁS",
         value=f"[{data.get('source_name', 'Fortnite.GG')} – Season Countdown]({data.get('source_url', FORTNITE_SEASON_URL)})",
         inline=False,
     )
-    embed.set_footer(text="Fortnite szezonfigyelő • A frissítés az adatforrást újra lekéri")
+    embed.set_footer(text="Fortnite szezonfigyelő • Frissítéskor az adatforrás újra lekérdezésre kerül")
     return embed
 
 
