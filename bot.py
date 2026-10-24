@@ -6,7 +6,10 @@ from aiohttp import web
 import asyncio
 import aiohttp
 import traceback
-from datetime import datetime
+import re
+import html
+from datetime import datetime, timezone
+from discord import app_commands
 
 # ------------------------
 # ENV / Konfiguráció
@@ -536,6 +539,14 @@ async def guild_permission_check(ctx):
 # ------------------------
 @bot.event
 async def on_ready():
+    # Slash parancsok szinkronizálása – a meglévő bot parancsait is megtartja.
+    if not getattr(bot, "_slash_commands_synced", False):
+        try:
+            synced = await bot.tree.sync()
+            bot._slash_commands_synced = True
+            print(f"✅ Slash parancsok szinkronizálva: {len(synced)}")
+        except Exception as e:
+            print(f"⚠️ Slash parancsok szinkronizálása sikertelen: {e}")
     print(f"✅ Bejelentkezett: {bot.user} (ID: {bot.user.id})")
 
 # ------------------------
@@ -1514,6 +1525,169 @@ async def start_webserver():
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
     print("🌐 Webserver elindítva: http://0.0.0.0:8080/")
+
+
+
+# =====================================================================
+# FORTNITE SZEZONFIGYELŐ – személyes, csak a parancsot kiadó által látható embed
+# Csatorna ID: 999779676761366558
+# Adatforrás: https://fortnite.gg/season-countdown
+# Használat: /szezon
+# =====================================================================
+
+FORTNITE_SEASON_CHANNEL_ID = 999779676761366558
+FORTNITE_SEASON_URL = "https://fortnite.gg/season-countdown"
+
+async def fetch_fortnite_season_data():
+    """Lekéri a Fortnite.GG oldalt. Csak olyan adatot jelenít meg, amit ténylegesen megtalál."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/125.0 Safari/537.36"
+    }
+    timeout = aiohttp.ClientTimeout(total=20)
+    async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+        async with session.get(FORTNITE_SEASON_URL, allow_redirects=True) as response:
+            if response.status != 200:
+                raise RuntimeError(f"Fortnite.GG HTTP {response.status}")
+            page = await response.text()
+
+    # Az oldalszkriptekből nem próbálunk találgatott értékeket kiolvasni.
+    visible = re.sub(r"(?is)<(script|style|noscript).*?>.*?</\1>", " ", page)
+    visible = re.sub(r"(?s)<[^>]+>", " ", visible)
+    visible = html.unescape(visible)
+    visible = re.sub(r"\s+", " ", visible).strip()
+
+    season = None
+    for pattern in (
+        r"\bChapter\s*\d+\s*Season\s*\d+\b",
+        r"\bChapter\s*\d+\s*[-:]\s*Season\s*\d+\b",
+    ):
+        m = re.search(pattern, visible, re.IGNORECASE)
+        if m:
+            season = m.group(0)
+            break
+
+    # Lehetséges, szövegként megjelenített szezonvégi dátumok.
+    end_date = None
+    date_patterns = [
+        r"(?:Season ends|Season end|Ends on|Szezon vége|Várható vége)\s*[:\-]?\s*"
+        r"([A-Za-z]+\s+\d{1,2},?\s+\d{4})",
+        r"(?:Season ends|Season end|Ends on|Szezon vége|Várható vége)\s*[:\-]?\s*"
+        r"(\d{1,2}\s+[A-Za-z]+\s+\d{4})",
+    ]
+    for pattern in date_patterns:
+        m = re.search(pattern, visible, re.IGNORECASE)
+        if m:
+            end_date = m.group(1).strip()
+            break
+
+    # Ha az adatokat az oldal JavaScriptből tölti be, a HTML nem feltétlenül tartalmazza őket.
+    # Ilyenkor a bot nem talál ki visszaszámlálást: ezt világosan jelzi a panel.
+    return {"season": season, "end_date": end_date, "page_text": visible}
+
+
+def make_fortnite_season_embed(data):
+    now = datetime.now(timezone.utc)
+    season = data.get("season")
+    end_date = data.get("end_date")
+    embed = discord.Embed(
+        title="👑 BATTLE ROYALE • SZEZONFIGYELŐ",
+        url=FORTNITE_SEASON_URL,
+        color=discord.Color.from_rgb(25, 210, 255),
+        timestamp=now,
+    )
+    if season:
+        embed.description = (
+            f"# {season}\n"
+            "**A következő nagy kalandig…**\n"
+            "Szezonfigyelő panel a Fortnite.GG adatai alapján."
+        )
+    else:
+        embed.description = (
+            "A Fortnite.GG oldal betöltődött, de a szezon nevét nem sikerült "
+            "megbízhatóan kiolvasni a HTML-ből. Lehetséges, hogy az oldal JavaScriptből tölti be az adatokat."
+        )
+
+    embed.add_field(
+        name="⏳ HÁTRALÉVŐ IDŐ A SZEZON VÉGÉIG",
+        value=(f"**Várható szezonvég:** {end_date}" if end_date else
+               "A pontos szezonvégi időpont nem volt kiolvasható az oldal HTML-jéből."),
+        inline=False,
+    )
+    embed.add_field(
+        name="🌈 SZEZONELŐREHALADÁS",
+        value="A százalékos érték csak akkor jelenik meg, ha az adatforrásból megbízhatóan kiolvasható.",
+        inline=False,
+    )
+    embed.add_field(
+        name="📅 ADATFORRÁS",
+        value=f"[Fortnite.GG – Season Countdown]({FORTNITE_SEASON_URL})",
+        inline=False,
+    )
+    embed.set_footer(text="Fortnite szezonfigyelő • A frissítés az adatforrást újra lekéri")
+    return embed
+
+
+class FortniteSeasonView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=300)
+
+    @discord.ui.button(
+        label="VISSZASZÁMLÁLÓ FRISSÍTÉSE",
+        emoji="🔄",
+        style=discord.ButtonStyle.primary,
+        custom_id="fortnite_season_refresh",
+    )
+    async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.channel_id != FORTNITE_SEASON_CHANNEL_ID:
+            await interaction.response.send_message(
+                f"Ezt a panelt ebben a csatornában használd: <#{FORTNITE_SEASON_CHANNEL_ID}>",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            data = await fetch_fortnite_season_data()
+            await interaction.followup.send(
+                embed=make_fortnite_season_embed(data),
+                view=FortniteSeasonView(),
+                ephemeral=True,
+            )
+        except Exception as e:
+            print(f"[Fortnite szezon frissítés] {e}")
+            await interaction.followup.send(
+                "⚠️ Nem sikerült frissíteni a Fortnite.GG adatait. Próbáld újra később.",
+                ephemeral=True,
+            )
+
+
+@bot.tree.command(name="szezon", description="Privát Fortnite szezon-visszaszámláló panel")
+@app_commands.guild_only()
+async def fortnite_szezon_command(interaction: discord.Interaction):
+    # A parancsot csak a megadott csatornában engedjük.
+    if interaction.channel_id != FORTNITE_SEASON_CHANNEL_ID:
+        await interaction.response.send_message(
+            f"A parancsot ebben a csatornában használd: <#{FORTNITE_SEASON_CHANNEL_ID}>",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    try:
+        data = await fetch_fortnite_season_data()
+        await interaction.followup.send(
+            embed=make_fortnite_season_embed(data),
+            view=FortniteSeasonView(),
+            ephemeral=True,
+        )
+    except Exception as e:
+        print(f"[Fortnite szezon lekérés] {e}")
+        await interaction.followup.send(
+            "⚠️ Nem sikerült lekérni a Fortnite.GG szezonadatait. "
+            "Az oldal átmenetileg nem érhető el, vagy megváltozott a szerkezete.",
+            ephemeral=True,
+        )
+
 
 # ------------------------
 # Main indítás (Render kompatibilis)
