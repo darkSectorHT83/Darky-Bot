@@ -1640,13 +1640,12 @@ def make_fortnite_season_embed(data):
         embed.description = "A szezon neve nem volt kiolvasható az adatforrásból."
 
     if end_dt:
-        seconds_left = max(0, int((end_dt - now).total_seconds()))
-        days, rem = divmod(seconds_left, 86400)
-        hours, rem = divmod(rem, 3600)
-        minutes, seconds = divmod(rem, 60)
-        countdown = f"**{days} nap {hours} óra {minutes} perc {seconds} mp**"
-        end_display = end_dt.strftime("%Y. %B %d. %H:%M UTC")
-        time_value = f"{countdown}\n**Várható szezonvég:** {end_display}"
+        # Discord dinamikus relatív időbélyeg: a kliens folyamatosan frissíti,
+        # ezért nem kell a botnak másodpercenként szerkesztenie az embedet.
+        end_unix = int(end_dt.timestamp())
+        countdown = f"<t:{end_unix}:R>"
+        end_display = f"<t:{end_unix}:F>"
+        time_value = f"**Visszaszámlálás:** {countdown}\n**Várható szezonvég:** {end_display}"
     else:
         time_value = f"**Várható szezonvég:** {end_date}" if end_date else "A szezonvégi időpont nem volt kiolvasható."
 
