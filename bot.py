@@ -1535,8 +1535,44 @@ async def start_webserver():
 # Használat: /szezon
 # =====================================================================
 
-FORTNITE_SEASON_CHANNEL_ID = 999779676761366558
+FORTNITE_SERVER_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "visszaszamlalo_server.txt")
 FORTNITE_SEASON_URL = "https://fortnite.gg/season-countdown"
+
+
+def load_fortnite_server_channels():
+    """Beolvassa a név + szerverazonosító | csatornaazonosító sorpárokat."""
+    configs = set()
+    try:
+        with open(FORTNITE_SERVER_CONFIG_FILE, "r", encoding="utf-8-sig") as f:
+            lines = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
+        i = 0
+        while i + 1 < len(lines):
+            name = lines[i]
+            ids_line = lines[i + 1]
+            if "|" in ids_line:
+                guild_text, channel_text = (part.strip() for part in ids_line.split("|", 1))
+                if guild_text.isdigit() and channel_text.isdigit():
+                    configs.add((int(guild_text), int(channel_text)))
+                else:
+                    print(f"⚠️ Hibás szerver/csatorna ID a {FORTNITE_SERVER_CONFIG_FILE} fájlban: {ids_line}")
+                i += 2
+            else:
+                print(f"⚠️ Hiányzó 'szerverID | csatornaID' sor a {FORTNITE_SERVER_CONFIG_FILE} fájlban a(z) {name} név után.")
+                i += 1
+    except FileNotFoundError:
+        print(f"⚠️ Nem található a konfigurációs fájl: {FORTNITE_SERVER_CONFIG_FILE}")
+    except Exception as e:
+        print(f"⚠️ Szerver/csatorna konfiguráció olvasási hiba: {e}")
+    return configs
+
+
+def is_fortnite_season_location(guild_id, channel_id):
+    return (int(guild_id or 0), int(channel_id or 0)) in load_fortnite_server_channels()
+
+
+def fortnite_season_allowed_locations_text():
+    configs = load_fortnite_server_channels()
+    return ", ".join(f"szerver `{guild_id}` / csatorna <#{channel_id}>" for guild_id, channel_id in sorted(configs)) or "nincs érvényes beállítás a visszaszamlalo_server.txt fájlban"
 
 async def fetch_fortnite_season_data():
     """Lekéri a Fortnite.GG oldalt. Csak olyan adatot jelenít meg, amit ténylegesen megtalál."""
@@ -1639,9 +1675,9 @@ class FortniteSeasonView(discord.ui.View):
         custom_id="fortnite_season_refresh",
     )
     async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.channel_id != FORTNITE_SEASON_CHANNEL_ID:
+        if not is_fortnite_season_location(interaction.guild_id, interaction.channel_id):
             await interaction.response.send_message(
-                f"Ezt a panelt ebben a csatornában használd: <#{FORTNITE_SEASON_CHANNEL_ID}>",
+                "Ez a panel nincs engedélyezve ezen a szerveren vagy csatornában.",
                 ephemeral=True,
             )
             return
@@ -1667,9 +1703,10 @@ async def fortnite_season_text_command(ctx: commands.Context):
     if ctx.guild is None:
         await ctx.reply("Ezt a parancsot Discord-szerveren használd.", mention_author=False)
         return
-    if ctx.channel.id != FORTNITE_SEASON_CHANNEL_ID:
+    if not is_fortnite_season_location(ctx.guild.id, ctx.channel.id):
         await ctx.reply(
-            f"Ezt a parancsot a beállított csatornában használd: <#{FORTNITE_SEASON_CHANNEL_ID}>",
+            "Ez a parancs nincs engedélyezve ezen a szerveren vagy csatornában. "
+            f"Beállított helyek: {fortnite_season_allowed_locations_text()}",
             mention_author=False,
             delete_after=30,
         )
@@ -1696,9 +1733,10 @@ async def fortnite_season_text_command(ctx: commands.Context):
 @app_commands.guild_only()
 async def fortnite_szezon_command(interaction: discord.Interaction):
     # A parancsot csak a megadott csatornában engedjük.
-    if interaction.channel_id != FORTNITE_SEASON_CHANNEL_ID:
+    if not is_fortnite_season_location(interaction.guild_id, interaction.channel_id):
         await interaction.response.send_message(
-            f"A parancsot ebben a csatornában használd: <#{FORTNITE_SEASON_CHANNEL_ID}>",
+            "Ez a parancs nincs engedélyezve ezen a szerveren vagy csatornában. "
+            f"Beállított helyek: {fortnite_season_allowed_locations_text()}",
             ephemeral=True,
         )
         return
@@ -1782,7 +1820,7 @@ async def fortnite_season_auto_on_message(message: discord.Message):
     """A TXT-ben szereplő felhasználók üzenetére nyilvános szezonpanelt küld."""
     if message.author.bot or message.guild is None:
         return
-    if message.channel.id != FORTNITE_SEASON_CHANNEL_ID:
+    if not is_fortnite_season_location(message.guild.id, message.channel.id):
         return
 
     allowed_ids = load_fortnite_watch_ids()  # minden üzenetnél újraolvassa, így a TXT módosítása érvényesül
