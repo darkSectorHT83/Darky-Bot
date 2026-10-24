@@ -1539,51 +1539,63 @@ FORTNITE_SEASON_CHANNEL_ID = 999779676761366558
 FORTNITE_SEASON_URL = "https://fortnite.gg/season-countdown"
 
 async def fetch_fortnite_season_data():
-    """Lekéri a Fortnite.GG oldalt. Csak olyan adatot jelenít meg, amit ténylegesen megtalál."""
+    """Próbálja a Fortnite.GG-t, 403 esetén pedig tartalék szezonoldalt használ."""
+    sources = [
+        (FORTNITE_SEASON_URL, "Fortnite.GG"),
+        ("https://fortnitecountdown.gg/", "FortniteCountdown.gg"),
+    ]
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/125.0 Safari/537.36"
+                      "(KHTML, like Gecko) Chrome/131.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
     }
     timeout = aiohttp.ClientTimeout(total=20)
+    errors = []
     async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-        async with session.get(FORTNITE_SEASON_URL, allow_redirects=True) as response:
-            if response.status != 200:
-                raise RuntimeError(f"Fortnite.GG HTTP {response.status}")
-            page = await response.text()
+        for url, source_name in sources:
+            try:
+                async with session.get(url, allow_redirects=True) as response:
+                    if response.status != 200:
+                        errors.append(f"{source_name} HTTP {response.status}")
+                        continue
+                    page = await response.text()
+                visible = re.sub(r"(?is)<(script|style|noscript).*?>.*?</\1>", " ", page)
+                visible = re.sub(r"(?s)<[^>]+>", " ", visible)
+                visible = html.unescape(visible)
+                visible = re.sub(r"\s+", " ", visible).strip()
 
-    # Az oldalszkriptekből nem próbálunk találgatott értékeket kiolvasni.
-    visible = re.sub(r"(?is)<(script|style|noscript).*?>.*?</\1>", " ", page)
-    visible = re.sub(r"(?s)<[^>]+>", " ", visible)
-    visible = html.unescape(visible)
-    visible = re.sub(r"\s+", " ", visible).strip()
+                season = None
+                for pattern in (
+                    r"\bChapter\s*\d+\s*Season\s*\d+\b",
+                    r"\bChapter\s*\d+\s*[-:]\s*Season\s*\d+\b",
+                ):
+                    match = re.search(pattern, visible, re.IGNORECASE)
+                    if match:
+                        season = match.group(0)
+                        break
 
-    season = None
-    for pattern in (
-        r"\bChapter\s*\d+\s*Season\s*\d+\b",
-        r"\bChapter\s*\d+\s*[-:]\s*Season\s*\d+\b",
-    ):
-        m = re.search(pattern, visible, re.IGNORECASE)
-        if m:
-            season = m.group(0)
-            break
+                # A tartalék oldalon jellemzően: "ends on Sunday, November 1, 2026 at 08:00 UTC".
+                end_date = None
+                date_patterns = (
+                    r"ends? on [A-Za-z]+,?\s+([A-Za-z]+\s+\d{1,2},?\s+\d{4})(?:\s+at\s+\d{1,2}:\d{2}\s+UTC)?",
+                    r"(?:Season ends|Season end|Ends on)\s*[:\-]?\s*([A-Za-z]+\s+\d{1,2},?\s+\d{4})",
+                    r"(?:Season ends|Season end|Ends on)\s*[:\-]?\s*(\d{1,2}\s+[A-Za-z]+\s+\d{4})",
+                )
+                for pattern in date_patterns:
+                    match = re.search(pattern, visible, re.IGNORECASE)
+                    if match:
+                        end_date = match.group(1).strip()
+                        break
 
-    # Lehetséges, szövegként megjelenített szezonvégi dátumok.
-    end_date = None
-    date_patterns = [
-        r"(?:Season ends|Season end|Ends on|Szezon vége|Várható vége)\s*[:\-]?\s*"
-        r"([A-Za-z]+\s+\d{1,2},?\s+\d{4})",
-        r"(?:Season ends|Season end|Ends on|Szezon vége|Várható vége)\s*[:\-]?\s*"
-        r"(\d{1,2}\s+[A-Za-z]+\s+\d{4})",
-    ]
-    for pattern in date_patterns:
-        m = re.search(pattern, visible, re.IGNORECASE)
-        if m:
-            end_date = m.group(1).strip()
-            break
+                if season or end_date:
+                    return {"season": season, "end_date": end_date, "page_text": visible,
+                            "source_name": source_name, "source_url": url}
+                errors.append(f"{source_name}: nem találtam szezonnevet vagy dátumot a HTML-ben")
+            except Exception as exc:
+                errors.append(f"{source_name}: {type(exc).__name__}: {exc}")
 
-    # Ha az adatokat az oldal JavaScriptből tölti be, a HTML nem feltétlenül tartalmazza őket.
-    # Ilyenkor a bot nem talál ki visszaszámlálást: ezt világosan jelzi a panel.
-    return {"season": season, "end_date": end_date, "page_text": visible}
+    raise RuntimeError("Egyik Fortnite-adatforrás sem érhető el: " + " | ".join(errors))
 
 
 def make_fortnite_season_embed(data):
@@ -1592,7 +1604,7 @@ def make_fortnite_season_embed(data):
     end_date = data.get("end_date")
     embed = discord.Embed(
         title="👑 BATTLE ROYALE • SZEZONFIGYELŐ",
-        url=FORTNITE_SEASON_URL,
+        url=data.get("source_url", FORTNITE_SEASON_URL),
         color=discord.Color.from_rgb(25, 210, 255),
         timestamp=now,
     )
@@ -1600,7 +1612,7 @@ def make_fortnite_season_embed(data):
         embed.description = (
             f"# {season}\n"
             "**A következő nagy kalandig…**\n"
-            "Szezonfigyelő panel a Fortnite.GG adatai alapján."
+            f"Szezonfigyelő panel a {data.get('source_name', 'Fortnite.GG')} adatai alapján."
         )
     else:
         embed.description = (
@@ -1621,7 +1633,7 @@ def make_fortnite_season_embed(data):
     )
     embed.add_field(
         name="📅 ADATFORRÁS",
-        value=f"[Fortnite.GG – Season Countdown]({FORTNITE_SEASON_URL})",
+        value=f"[{data.get('source_name', 'Fortnite.GG')} – Season Countdown]({data.get('source_url', FORTNITE_SEASON_URL)})",
         inline=False,
     )
     embed.set_footer(text="Fortnite szezonfigyelő • A frissítés az adatforrást újra lekéri")
