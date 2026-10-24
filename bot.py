@@ -1661,6 +1661,37 @@ class FortniteSeasonView(discord.ui.View):
             )
 
 
+@bot.command(name="season")
+async def fortnite_season_text_command(ctx: commands.Context):
+    """!season parancsra nyilvános Fortnite-szezonpanelt küld."""
+    if ctx.guild is None:
+        await ctx.reply("Ezt a parancsot Discord-szerveren használd.", mention_author=False)
+        return
+    if ctx.channel.id != FORTNITE_SEASON_CHANNEL_ID:
+        await ctx.reply(
+            f"Ezt a parancsot a beállított csatornában használd: <#{FORTNITE_SEASON_CHANNEL_ID}>",
+            mention_author=False,
+            delete_after=30,
+        )
+        return
+
+    try:
+        data = await fetch_fortnite_season_data()
+        await ctx.send(
+            embed=make_fortnite_season_embed(data),
+            view=FortniteSeasonView(),
+            delete_after=600,
+        )
+        print(f"🎮 !season panel elküldve: {ctx.author} ({ctx.author.id})")
+    except Exception as e:
+        print(f"⚠️ !season parancs hiba: {type(e).__name__}: {e}")
+        await ctx.reply(
+            "⚠️ Nem sikerült lekérni a szezonadatokat. Nézd meg a Render Logs naplót.",
+            mention_author=False,
+            delete_after=60,
+        )
+
+
 @bot.tree.command(name="szezon", description="Privát Fortnite szezon-visszaszámláló panel")
 @app_commands.guild_only()
 async def fortnite_szezon_command(interaction: discord.Interaction):
