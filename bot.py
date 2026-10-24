@@ -1711,7 +1711,7 @@ def make_fortnite_season_embed(data):
     return embed
 
 
-async def send_fortnite_live_panel(destination, data, *, reference_message=None):
+async def send_fortnite_live_panel(destination, data, *, reference_message=None, delete_reference_message=False):
     """Küld egy szezonpanelt, másodpercenként frissíti 60 másodpercig, majd törli."""
     panel = await destination.send(
         embed=make_fortnite_season_embed(data),
@@ -1738,6 +1738,16 @@ async def send_fortnite_live_panel(destination, data, *, reference_message=None)
                 pass
             except Exception as exc:
                 print(f"[Fortnite panel törlés] {type(exc).__name__}: {exc}")
+
+            # A !season parancsot tartalmazó eredeti üzenetet is töröljük,
+            # ha ezt a hívó kifejezetten kérte.
+            if delete_reference_message and reference_message is not None:
+                try:
+                    await reference_message.delete()
+                except (discord.NotFound, discord.Forbidden):
+                    pass
+                except Exception as exc:
+                    print(f"[Fortnite parancsüzenet törlés] {type(exc).__name__}: {exc}")
 
     asyncio.create_task(update_for_one_minute())
     return panel
@@ -1792,7 +1802,9 @@ async def fortnite_season_text_command(ctx: commands.Context):
 
     try:
         data = await fetch_fortnite_season_data()
-        await send_fortnite_live_panel(ctx.channel, data, reference_message=ctx.message)
+        await send_fortnite_live_panel(
+            ctx.channel, data, reference_message=ctx.message, delete_reference_message=True
+        )
         print(f"🎮 !season panel elküldve: {ctx.author} ({ctx.author.id})")
     except Exception as e:
         print(f"⚠️ !season parancs hiba: {type(e).__name__}: {e}")
