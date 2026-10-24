@@ -6,7 +6,10 @@ from aiohttp import web
 import asyncio
 import aiohttp
 import traceback
-from datetime import datetime
+import re
+import html
+from datetime import datetime, timezone
+from discord import app_commands
 
 # ------------------------
 # ENV / Konfiguráció
@@ -536,6 +539,14 @@ async def guild_permission_check(ctx):
 # ------------------------
 @bot.event
 async def on_ready():
+    # Slash parancsok szinkronizálása – a meglévő bot parancsait is megtartja.
+    if not getattr(bot, "_slash_commands_synced", False):
+        try:
+            synced = await bot.tree.sync()
+            bot._slash_commands_synced = True
+            print(f"✅ Slash parancsok szinkronizálva: {len(synced)}")
+        except Exception as e:
+            print(f"⚠️ Slash parancsok szinkronizálása sikertelen: {e}")
     print(f"✅ Bejelentkezett: {bot.user} (ID: {bot.user.id})")
 
 # ------------------------
@@ -1405,73 +1416,6 @@ async def get_json(request):
             data = {}
     return web.json_response(data, status=200, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=4))
 
-async def get_darksectorht_status(request):
-    """A DSAPP számára lekérdezi a darkSectorHT aktuális Twitch-állapotát.
-
-    API-/hálózati hiba esetén ok=false és HTTP 503 érkezik,
-    így az alkalmazás nem keveri össze a hibát az offline állapottal.
-    """
-    username = "darkSectorHT"
-    checked_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
-    cors_headers = {"Access-Control-Allow-Origin": "*", "Cache-Control": "no-store"}
-
-    if not TWITCH_CLIENT_ID or not TWITCH_ACCESS_TOKEN:
-        return web.json_response({
-            "ok": False,
-            "username": username,
-            "error": "A Twitch API hitelesítési adatai nincsenek beállítva.",
-            "checked_at": checked_at
-        }, status=503, headers=cors_headers)
-
-    url = f"https://api.twitch.tv/helix/streams?user_login={username}"
-    headers = {
-        "Client-ID": TWITCH_CLIENT_ID,
-        "Authorization": f"Bearer {TWITCH_ACCESS_TOKEN}"
-    }
-    try:
-        timeout = aiohttp.ClientTimeout(total=15)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers=headers) as resp:
-                if resp.status != 200:
-                    details = await resp.text()
-                    print(f"[darkSectorHT státusz] Twitch API hiba: {resp.status} - {details}")
-                    return web.json_response({
-                        "ok": False,
-                        "username": username,
-                        "error": f"Twitch API hiba ({resp.status}).",
-                        "checked_at": checked_at
-                    }, status=503, headers=cors_headers)
-                payload = await resp.json()
-
-        streams = payload.get("data")
-        if not isinstance(streams, list):
-            return web.json_response({
-                "ok": False, "username": username,
-                "error": "Érvénytelen Twitch API-válasz.", "checked_at": checked_at
-            }, status=503, headers=cors_headers)
-
-        stream = streams[0] if streams else None
-        result = {
-            "ok": True,
-            "username": username,
-            "online": stream is not None,
-            "checked_at": checked_at,
-            "title": stream.get("title", "") if stream else "",
-            "game_name": stream.get("game_name", "") if stream else "",
-            "viewer_count": stream.get("viewer_count", 0) if stream else 0,
-            "started_at": stream.get("started_at", "") if stream else "",
-            "url": f"https://www.twitch.tv/{username}"
-        }
-        return web.json_response(result, status=200, headers=cors_headers)
-    except Exception as exc:
-        print(f"[darkSectorHT státusz] Lekérdezési hiba: {exc}")
-        return web.json_response({
-            "ok": False,
-            "username": username,
-            "error": "A Twitch-státusz jelenleg nem kérdezhető le.",
-            "checked_at": checked_at
-        }, status=503, headers=cors_headers)
-
 async def get_twitch_state_json(request):
     if not os.path.exists(TWITCH_INTERNAL_FILE):
         return web.json_response([], status=200)
@@ -1481,6 +1425,69 @@ async def get_twitch_state_json(request):
         except json.JSONDecodeError:
             data = []
     return web.json_response(data, status=200)
+
+
+async def get_dsapp_live_json(request):
+    """DSAPP: az aktuális DarkSectorHT Twitch stream publikus adatai."""
+    live, stream = await is_twitch_live("darksectorht")
+    if not live or not stream:
+        return web.json_response({"live": False, "username": "darksectorht"}, headers={"Cache-Control": "no-store"})
+    return web.json_response({
+        "live": True,
+        "username": stream.get("user_name", "darksectorht"),
+        "title": stream.get("title", ""),
+        "game_name": stream.get("game_name", ""),
+        "game_id": stream.get("game_id", ""),
+        "started_at": stream.get("started_at", ""),
+        "viewer_count": stream.get("viewer_count", 0),
+        "language": stream.get("language", "hu"),
+        "url": "https://www.twitch.tv/darksectorht"
+    }, headers={"Cache-Control": "no-store"})
+
+async def get_dsapp_game_json(request):
+    """DSAPP játékadatlap: Steam Store adatkeresés kulcs nélkül; ha nincs találat, üres metaadatot ad."""
+    name = (request.query.get("name") or "").strip()[:120]
+    if not name:
+        return web.json_response({"error": "missing_name"}, status=400)
+    try:
+        async with aiohttp.ClientSession() as session:
+            search_url = "https://store.steampowered.com/api/storesearch/"
+            async with session.get(search_url, params={"term": name, "l": "hungarian", "cc": "hu"}, timeout=12) as resp:
+                if resp.status != 200:
+                    raise RuntimeError(f"Steam search HTTP {resp.status}")
+                search = await resp.json(content_type=None)
+            items = search.get("items", []) if isinstance(search, dict) else []
+            if not items:
+                return web.json_response({"name": name, "cover": "", "developer": "", "publisher": "", "release_date": "", "description": "", "url": ""}, headers={"Cache-Control": "public, max-age=3600"})
+            # A legpontosabb névegyezés előnyt kap.
+            normalized = lambda x: " ".join(str(x or "").casefold().split())
+            item = next((x for x in items if normalized(x.get("name")) == normalized(name)), items[0])
+            appid = item.get("id")
+            if not appid:
+                return web.json_response({"name": item.get("name", name), "cover": item.get("tiny_image", ""), "developer": "", "publisher": "", "release_date": "", "description": "", "url": ""})
+            details_url = "https://store.steampowered.com/api/appdetails/"
+            async with session.get(details_url, params={"appids": appid, "l": "hungarian", "cc": "hu"}, timeout=12) as resp:
+                if resp.status != 200:
+                    raise RuntimeError(f"Steam details HTTP {resp.status}")
+                wrapper = await resp.json(content_type=None)
+            data = (wrapper.get(str(appid)) or {}).get("data") or {}
+            desc = data.get("short_description") or data.get("about_the_game") or ""
+            # Az about_the_game HTML-t tartalmazhat, ezért egyszerűen eltávolítjuk a tageket.
+            import re
+            desc = re.sub(r"<[^>]+>", " ", desc)
+            desc = re.sub(r"\s+", " ", desc).strip()
+            return web.json_response({
+                "name": data.get("name") or item.get("name") or name,
+                "cover": data.get("header_image") or item.get("tiny_image") or "",
+                "developer": ", ".join(data.get("developers") or []),
+                "publisher": ", ".join(data.get("publishers") or []),
+                "release_date": (data.get("release_date") or {}).get("date", ""),
+                "description": desc[:900],
+                "url": f"https://store.steampowered.com/app/{appid}/"
+            }, headers={"Cache-Control": "public, max-age=3600"})
+    except Exception as e:
+        print(f"[DSAPP game metadata] {e}")
+        return web.json_response({"error": "lookup_failed", "name": name}, status=502, headers={"Cache-Control": "no-store"})
 
 async def get_youtube_state_json(request):
     if not os.path.exists(YOUTUBE_INTERNAL_FILE):
@@ -1507,7 +1514,8 @@ app = web.Application()
 app.router.add_get("/", handle)
 app.router.add_get("/reaction_roles.json", get_json)
 app.router.add_get("/twitch_streams_state.json", get_twitch_state_json)
-app.router.add_get("/darksectorht_status", get_darksectorht_status)
+app.router.add_get("/dsapp_live.json", get_dsapp_live_json)
+app.router.add_get("/dsapp_game.json", get_dsapp_game_json)
 app.router.add_get("/youtube_streams_state.json", get_youtube_state_json)
 app.router.add_get("/kick_streams_state.json", get_kick_state_json)
 
@@ -1517,6 +1525,415 @@ async def start_webserver():
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
     print("🌐 Webserver elindítva: http://0.0.0.0:8080/")
+
+
+
+# =====================================================================
+# FORTNITE SZEZONFIGYELŐ – személyes, csak a parancsot kiadó által látható embed
+# Csatorna ID: 999779676761366558
+# Adatforrás: https://fortnite.gg/season-countdown
+# Használat: /szezon
+# =====================================================================
+
+FORTNITE_SERVER_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "visszaszamlalo_server.txt")
+FORTNITE_SEASON_URL = "https://fortnite.gg/season-countdown"
+
+
+def load_fortnite_server_channels():
+    """Beolvassa a név + szerverazonosító | csatornaazonosító sorpárokat."""
+    configs = set()
+    try:
+        with open(FORTNITE_SERVER_CONFIG_FILE, "r", encoding="utf-8-sig") as f:
+            lines = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
+        i = 0
+        while i + 1 < len(lines):
+            name = lines[i]
+            ids_line = lines[i + 1]
+            if "|" in ids_line:
+                guild_text, channel_text = (part.strip() for part in ids_line.split("|", 1))
+                if guild_text.isdigit() and channel_text.isdigit():
+                    configs.add((int(guild_text), int(channel_text)))
+                else:
+                    print(f"⚠️ Hibás szerver/csatorna ID a {FORTNITE_SERVER_CONFIG_FILE} fájlban: {ids_line}")
+                i += 2
+            else:
+                print(f"⚠️ Hiányzó 'szerverID | csatornaID' sor a {FORTNITE_SERVER_CONFIG_FILE} fájlban a(z) {name} név után.")
+                i += 1
+    except FileNotFoundError:
+        print(f"⚠️ Nem található a konfigurációs fájl: {FORTNITE_SERVER_CONFIG_FILE}")
+    except Exception as e:
+        print(f"⚠️ Szerver/csatorna konfiguráció olvasási hiba: {e}")
+    return configs
+
+
+def is_fortnite_season_location(guild_id, channel_id):
+    return (int(guild_id or 0), int(channel_id or 0)) in load_fortnite_server_channels()
+
+
+def fortnite_season_allowed_locations_text():
+    configs = load_fortnite_server_channels()
+    return ", ".join(f"szerver `{guild_id}` / csatorna <#{channel_id}>" for guild_id, channel_id in sorted(configs)) or "nincs érvényes beállítás a visszaszamlalo_server.txt fájlban"
+
+async def fetch_fortnite_season_data():
+    """Elsődleges és tartalék adatforrásból próbálja kiolvasni a szezon adatait."""
+    sources = [
+        (FORTNITE_SEASON_URL, "Fortnite.GG"),
+        ("https://fortnitecountdown.gg/", "FortniteCountdown.gg"),
+    ]
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/131.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    errors = []
+    timeout = aiohttp.ClientTimeout(total=20)
+    async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+        for url, source_name in sources:
+            try:
+                async with session.get(url, allow_redirects=True) as response:
+                    if response.status != 200:
+                        errors.append(f"{source_name} HTTP {response.status}")
+                        continue
+                    page = await response.text()
+
+                # A szezonadatok a látható szövegben vagy a beágyazott JSON/JavaScriptben is lehetnek.
+                raw = html.unescape(page)
+                visible = re.sub(r"(?is)<(style|noscript).*?>.*?</\1>", " ", raw)
+                visible = re.sub(r"(?s)<[^>]+>", " ", visible)
+                visible = re.sub(r"\s+", " ", html.unescape(visible)).strip()
+                searchable = visible + " " + re.sub(r"\s+", " ", raw)
+
+                season = None
+                for pattern in (
+                    r"\bChapter\s*\d+\s*Season\s*\d+\b",
+                    r"\bChapter\s*\d+\s*[-:]\s*Season\s*\d+\b",
+                ):
+                    match = re.search(pattern, searchable, re.IGNORECASE)
+                    if match:
+                        season = match.group(0)
+                        break
+
+                end_date = None
+                # A szezonvég dátumát keressük először.
+                date_patterns = (
+                    r"ends? on\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s+([A-Za-z]+\s+\d{1,2},?\s+\d{4})",
+                    r"(?:season\s*(?:ends?|end date)|seasonEndDate|endDate).{0,80}?([A-Za-z]+\s+\d{1,2},?\s+\d{4})",
+                    r"(?:season\s*(?:ends?|end date)|ends? on).{0,80}?(\d{1,2}\s+[A-Za-z]+\s+\d{4})",
+                    r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)",
+                )
+                for pattern in date_patterns:
+                    match = re.search(pattern, searchable, re.IGNORECASE)
+                    if match:
+                        end_date = match.group(1).strip()
+                        break
+
+                progress = None
+                for pattern in (
+                    r"(?:season progress|progress(?: is)? at)[\"'\s:=]{0,20}(\d{1,3}(?:\.\d+)?)\s*%",
+                    r"(\d{1,3}(?:\.\d+)?)\s*%\s*(?:complete|completed)",
+                ):
+                    match = re.search(pattern, searchable, re.IGNORECASE)
+                    if match:
+                        progress = max(0.0, min(100.0, float(match.group(1))))
+                        break
+
+                if season or end_date:
+                    print(f"✅ Fortnite szezonadat frissítve: szezon={season}; dátum={end_date}; haladás={progress}")
+                    return {
+                        "season": season,
+                        "end_date": end_date,
+                        "progress": progress,
+                        "page_text": visible,
+                        "source_name": source_name,
+                        "source_url": url,
+                    }
+                errors.append(f"{source_name}: az oldal elérhető, de a szezon nevét/dátumát nem találtam")
+            except Exception as exc:
+                errors.append(f"{source_name}: {type(exc).__name__}: {exc}")
+
+    raise RuntimeError("Egyik Fortnite-adatforrásból sem sikerült adatot kiolvasni: " + " | ".join(errors))
+
+
+def make_fortnite_season_embed(data):
+    now = datetime.now(timezone.utc)
+    season = data.get("season")
+    end_date = data.get("end_date")
+    end_dt = None
+
+    if end_date:
+        try:
+            # ISO timestamp (if supplied by the page)
+            parsed = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+            end_dt = parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
+        except (ValueError, TypeError):
+            for fmt in ("%B %d, %Y", "%B %d %Y", "%d %B %Y"):
+                try:
+                    end_dt = datetime.strptime(end_date.replace(",", ""), fmt.replace(",", "")).replace(
+                        hour=8, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
+                    )
+                    break
+                except ValueError:
+                    continue
+
+    source_name = data.get("source_name", "Fortnite adatforrás")
+    source_url = data.get("source_url", FORTNITE_SEASON_URL)
+    embed = discord.Embed(
+        title="👑 BATTLE ROYALE • SZEZONFIGYELŐ",
+        color=discord.Color.from_rgb(25, 210, 255),
+        timestamp=now,
+    )
+    embed.description = (
+        f"# {season}\n**A következő nagy kalandig…**"
+        if season else "A szezon neve nem volt kiolvasható az adatforrásból."
+    )
+
+    if end_dt:
+        seconds_left = max(0, int((end_dt - now).total_seconds()))
+        days, rem = divmod(seconds_left, 86400)
+        hours, rem = divmod(rem, 3600)
+        minutes, seconds = divmod(rem, 60)
+        countdown = f"**{days} nap {hours} óra {minutes} perc {seconds} mp**"
+        end_display = end_dt.strftime("%Y. %m. %d. %H:%M UTC")
+        time_value = f"{countdown}\n**Várható szezonvég:** {end_display}\nDiscord-időbélyeg: <t:{int(end_dt.timestamp())}:R>"
+    else:
+        time_value = "A pontos szezonvégi időpontot az adatforrásból nem sikerült kiolvasni."
+
+    embed.add_field(name="⏳ HÁTRALÉVŐ IDŐ A SZEZON VÉGÉIG", value=time_value, inline=False)
+    progress = data.get("progress")
+    if progress is not None:
+        filled = round(progress / 10)
+        bar = "🟦" * filled + "⬛" * (10 - filled)
+        progress_value = f"**{progress:.0f}%**\n{bar}"
+    else:
+        progress_value = "A százalékos érték nem volt megbízhatóan kiolvasható az adatforrásból."
+    embed.add_field(name="🌈 SZEZONELŐREHALADÁS", value=progress_value, inline=False)
+    return embed
+
+
+async def send_fortnite_live_panel(destination, data, *, reference_message=None, delete_reference_message=False):
+    """Küld egy szezonpanelt, másodpercenként frissíti 60 másodpercig, majd törli."""
+    panel = await destination.send(
+        embed=make_fortnite_season_embed(data),
+        view=FortniteSeasonView(),
+        reference=reference_message,
+        mention_author=False if reference_message else None,
+    )
+
+    async def update_for_one_minute():
+        try:
+            # A weboldalt csak egyszer kérjük le; a helyben tárolt szezonvégi dátumból
+            # számoljuk újra a visszaszámlálót minden másodpercben.
+            for _ in range(60):
+                await asyncio.sleep(1)
+                await panel.edit(embed=make_fortnite_season_embed(data), view=FortniteSeasonView())
+        except (discord.NotFound, discord.Forbidden):
+            return
+        except Exception as exc:
+            print(f"[Fortnite számláló frissítés] {type(exc).__name__}: {exc}")
+        finally:
+            try:
+                await panel.delete()
+            except (discord.NotFound, discord.Forbidden):
+                pass
+            except Exception as exc:
+                print(f"[Fortnite panel törlés] {type(exc).__name__}: {exc}")
+
+            # A !season parancsot tartalmazó eredeti üzenetet is töröljük,
+            # ha ezt a hívó kifejezetten kérte.
+            if delete_reference_message and reference_message is not None:
+                try:
+                    await reference_message.delete()
+                except (discord.NotFound, discord.Forbidden):
+                    pass
+                except Exception as exc:
+                    print(f"[Fortnite parancsüzenet törlés] {type(exc).__name__}: {exc}")
+
+    asyncio.create_task(update_for_one_minute())
+    return panel
+
+
+class FortniteSeasonView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=300)
+
+    @discord.ui.button(
+        label="VISSZASZÁMLÁLÓ FRISSÍTÉSE",
+        emoji="🔄",
+        style=discord.ButtonStyle.primary,
+        custom_id="fortnite_season_refresh",
+    )
+    async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_fortnite_season_location(interaction.guild_id, interaction.channel_id):
+            await interaction.response.send_message(
+                "Ez a panel nincs engedélyezve ezen a szerveren vagy csatornában.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.defer()
+        try:
+            data = await fetch_fortnite_season_data()
+            await interaction.message.edit(
+                embed=make_fortnite_season_embed(data),
+                view=FortniteSeasonView(),
+            )
+        except Exception as e:
+            print(f"[Fortnite szezon frissítés] {e}")
+            await interaction.followup.send(
+                "⚠️ Most nem sikerült frissíteni a szezonadatokat. Próbáld újra később.",
+                ephemeral=True,
+            )
+
+
+@bot.command(name="season")
+async def fortnite_season_text_command(ctx: commands.Context):
+    """!season parancsra nyilvános Fortnite-szezonpanelt küld."""
+    if ctx.guild is None:
+        await ctx.reply("Ezt a parancsot Discord-szerveren használd.", mention_author=False)
+        return
+    if not is_fortnite_season_location(ctx.guild.id, ctx.channel.id):
+        await ctx.reply(
+            "Ez a parancs nincs engedélyezve ezen a szerveren vagy csatornában. "
+            f"Beállított helyek: {fortnite_season_allowed_locations_text()}",
+            mention_author=False,
+            delete_after=30,
+        )
+        return
+
+    try:
+        data = await fetch_fortnite_season_data()
+        await send_fortnite_live_panel(
+            ctx.channel, data, reference_message=ctx.message, delete_reference_message=True
+        )
+        print(f"🎮 !season panel elküldve: {ctx.author} ({ctx.author.id})")
+    except Exception as e:
+        print(f"⚠️ !season parancs hiba: {type(e).__name__}: {e}")
+        await ctx.reply(
+            "⚠️ Nem sikerült lekérni a szezonadatokat. Nézd meg a Render Logs naplót.",
+            mention_author=False,
+            delete_after=60,
+        )
+
+
+@bot.tree.command(name="szezon", description="Privát Fortnite szezon-visszaszámláló panel")
+@app_commands.guild_only()
+async def fortnite_szezon_command(interaction: discord.Interaction):
+    # A parancsot csak a megadott csatornában engedjük.
+    if not is_fortnite_season_location(interaction.guild_id, interaction.channel_id):
+        await interaction.response.send_message(
+            "Ez a parancs nincs engedélyezve ezen a szerveren vagy csatornában. "
+            f"Beállított helyek: {fortnite_season_allowed_locations_text()}",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    try:
+        data = await fetch_fortnite_season_data()
+        await interaction.followup.send(
+            embed=make_fortnite_season_embed(data),
+            view=FortniteSeasonView(),
+            ephemeral=True,
+        )
+    except Exception as e:
+        print(f"[Fortnite szezon lekérés] {e}")
+        await interaction.followup.send(
+            "⚠️ Nem sikerült lekérni a szezonadatokat. "
+            "Az oldal átmenetileg nem érhető el, vagy megváltozott a szerkezete.",
+            ephemeral=True,
+        )
+
+
+
+# =====================================================================
+# AUTOMATIKUS FORTNITE PANEL ÜZENETRE – ID-lista a visszaszamlalo.txt fájlból
+# A fájl formátuma: DISCORD_USER_ID | megjegyzés / név
+# A név csak megjegyzés; a bot kizárólag a sor elején álló ID-t használja.
+# A botkód mellett lévő visszaszamlalo.txt fájlt olvassa.
+# =====================================================================
+
+FORTNITE_WATCH_IDS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "visszaszamlalo.txt")
+FORTNITE_WATCH_COOLDOWN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "visszaszamlalo_cooldowns.json")
+FORTNITE_WATCH_COOLDOWN_SECONDS = 60 * 60  # felhasználónként óránként legfeljebb egy panel
+
+
+def load_fortnite_watch_ids():
+    """ID-k beolvasása a 'ID | megjegyzés' formátumú TXT-ből."""
+    ids = set()
+    try:
+        with open(FORTNITE_WATCH_IDS_FILE, "r", encoding="utf-8-sig") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                # A megjegyzés a | után van, nem vesz részt az ellenőrzésben.
+                user_id_text = line.split("|", 1)[0].strip()
+                if user_id_text.isdigit():
+                    ids.add(int(user_id_text))
+    except FileNotFoundError:
+        print(f"⚠️ Nem található {FORTNITE_WATCH_IDS_FILE}. Hozd létre a bot mellett.")
+    except Exception as e:
+        print(f"⚠️ visszaszamlalo.txt olvasási hiba: {e}")
+    return ids
+
+
+def load_fortnite_watch_cooldowns():
+    try:
+        with open(FORTNITE_WATCH_COOLDOWN_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+    except Exception as e:
+        print(f"⚠️ Visszaszámláló cooldown betöltési hiba: {e}")
+        return {}
+
+
+def save_fortnite_watch_cooldowns(data):
+    try:
+        with open(FORTNITE_WATCH_COOLDOWN_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"⚠️ Visszaszámláló cooldown mentési hiba: {e}")
+
+
+_fortnite_watch_cooldowns = load_fortnite_watch_cooldowns()
+_fortnite_watch_lock = asyncio.Lock()
+
+
+@bot.listen("on_message")
+async def fortnite_season_auto_on_message(message: discord.Message):
+    """A TXT-ben szereplő felhasználók üzenetére nyilvános szezonpanelt küld."""
+    if message.author.bot or message.guild is None:
+        return
+    if not is_fortnite_season_location(message.guild.id, message.channel.id):
+        return
+
+    allowed_ids = load_fortnite_watch_ids()  # minden üzenetnél újraolvassa, így a TXT módosítása érvényesül
+    if message.author.id not in allowed_ids:
+        return
+
+    now = datetime.now(timezone.utc).timestamp()
+    user_key = str(message.author.id)
+
+    async with _fortnite_watch_lock:
+        last_sent = float(_fortnite_watch_cooldowns.get(user_key, 0) or 0)
+        if now - last_sent < FORTNITE_WATCH_COOLDOWN_SECONDS:
+            return
+        # Előre mentjük, hogy pár gyors egymás utáni üzenet se küldjön több panelt.
+        _fortnite_watch_cooldowns[user_key] = now
+        save_fortnite_watch_cooldowns(_fortnite_watch_cooldowns)
+
+    try:
+        data = await fetch_fortnite_season_data()
+        await send_fortnite_live_panel(message.channel, data, reference_message=message)
+        print(f"🎮 Fortnite panel elküldve {message.author} ({message.author.id}) üzenetére.")
+    except Exception as e:
+        # Küldési hiba esetén visszaállítjuk a cooldown-t, hogy később újra próbálkozhasson.
+        async with _fortnite_watch_lock:
+            _fortnite_watch_cooldowns.pop(user_key, None)
+            save_fortnite_watch_cooldowns(_fortnite_watch_cooldowns)
+        print(f"⚠️ Automatikus Fortnite panel hiba: {e}")
 
 # ------------------------
 # Main indítás (Render kompatibilis)
