@@ -1639,9 +1639,11 @@ class FortniteSeasonView(discord.ui.View):
         custom_id="fortnite_season_refresh",
     )
     async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.channel_id != FORTNITE_SEASON_CHANNEL_ID:
+        configured_locations = load_fortnite_watch_server_channels()
+        location_key = (interaction.guild_id, interaction.channel_id)
+        if location_key not in configured_locations:
             await interaction.response.send_message(
-                f"Ezt a panelt ebben a csatornában használd: <#{FORTNITE_SEASON_CHANNEL_ID}>",
+                "Ez a csatorna nincs beállítva a visszaszamlalo_server.txt fájlban.",
                 ephemeral=True,
             )
             return
@@ -1661,31 +1663,73 @@ class FortniteSeasonView(discord.ui.View):
             )
 
 
-@bot.tree.command(name="szezon", description="Privát Fortnite szezon-visszaszámláló panel")
+@bot.tree.command(name="szezon", description="Fortnite szezon-visszaszámláló panel küldése ebbe a csatornába")
 @app_commands.guild_only()
 async def fortnite_szezon_command(interaction: discord.Interaction):
-    # A parancsot csak a megadott csatornában engedjük.
-    if interaction.channel_id != FORTNITE_SEASON_CHANNEL_ID:
+    """Parancsra nyilvánosan kiküldi a panelt az engedélyezett csatornába."""
+    configured_locations = load_fortnite_watch_server_channels()
+    location_key = (interaction.guild_id, interaction.channel_id)
+    if location_key not in configured_locations:
         await interaction.response.send_message(
-            f"A parancsot ebben a csatornában használd: <#{FORTNITE_SEASON_CHANNEL_ID}>",
+            "❌ Ez a csatorna nincs beállítva a `visszaszamlalo_server.txt` fájlban.",
             ephemeral=True,
         )
         return
 
+    display_name = configured_locations[location_key]
     await interaction.response.defer(ephemeral=True, thinking=True)
     try:
+        print(f"🎮 /szezon parancs: {display_name} | szerver={interaction.guild_id} | csatorna={interaction.channel_id} | kérte={interaction.user} ({interaction.user.id})")
         data = await fetch_fortnite_season_data()
+        await interaction.channel.send(embed=make_fortnite_season_embed(data), view=FortniteSeasonView())
+        await interaction.followup.send("✅ A Fortnite-szezonszámláló panelt nyilvánosan elküldtem ebbe a csatornába.", ephemeral=True)
+        print(f"✅ /szezon panel elküldve: {display_name}")
+    except Exception as e:
+        print(f"❌ /szezon parancs hiba ({display_name}): {type(e).__name__}: {e}")
         await interaction.followup.send(
-            embed=make_fortnite_season_embed(data),
-            view=FortniteSeasonView(),
+            "⚠️ Nem sikerült elküldeni a Fortnite-panelt. Nézd meg a Render Logs naplót.",
             ephemeral=True,
         )
+
+
+
+@bot.command(name="season")
+@commands.guild_only()
+async def fortnite_season_text_command(ctx: commands.Context):
+    """A Fortnite-szezonszámláló panel nyilvános kiküldése !season parancsra."""
+    configured_locations = load_fortnite_watch_server_channels()
+    location_key = (ctx.guild.id, ctx.channel.id)
+    if location_key not in configured_locations:
+        print(
+            f"❌ !season nem engedélyezett helyen: "
+            f"szerver={ctx.guild.id} | csatorna={ctx.channel.id} | kérte={ctx.author} ({ctx.author.id})"
+        )
+        await ctx.reply(
+            "❌ Ez a csatorna nincs beállítva a `visszaszamlalo_server.txt` fájlban.",
+            mention_author=False,
+        )
+        return
+
+    display_name = configured_locations[location_key]
+    try:
+        print(
+            f"🎮 !season parancs: {display_name} | "
+            f"szerver={ctx.guild.id} | csatorna={ctx.channel.id} | "
+            f"kérte={ctx.author} ({ctx.author.id})"
+        )
+        async with ctx.typing():
+            data = await fetch_fortnite_season_data()
+        await ctx.send(
+            embed=make_fortnite_season_embed(data),
+            view=FortniteSeasonView(),
+        )
+        print(f"✅ !season panel elküldve: {display_name}")
     except Exception as e:
-        print(f"[Fortnite szezon lekérés] {e}")
-        await interaction.followup.send(
-            "⚠️ Nem sikerült lekérni a Fortnite.GG szezonadatait. "
-            "Az oldal átmenetileg nem érhető el, vagy megváltozott a szerkezete.",
-            ephemeral=True,
+        print(f"❌ !season parancs hiba ({display_name}): {type(e).__name__}: {e}")
+        traceback.print_exc()
+        await ctx.reply(
+            "⚠️ Nem sikerült elküldeni a Fortnite-panelt. Nézd meg a Render Logs naplót.",
+            mention_author=False,
         )
 
 
