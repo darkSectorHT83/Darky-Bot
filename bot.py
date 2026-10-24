@@ -1691,19 +1691,23 @@ async def fortnite_szezon_command(interaction: discord.Interaction):
 
 
 # =====================================================================
-# AUTOMATIKUS FORTNITE PANEL ÜZENETRE – ID-lista a visszaszamlalo.txt fájlból
-# A fájl formátuma: DISCORD_USER_ID | megjegyzés / név
-# A név csak megjegyzés; a bot kizárólag a sor elején álló ID-t használja.
-# A botkód mellett lévő visszaszamlalo.txt fájlt olvassa.
+# AUTOMATIKUS FORTNITE PANEL – visszaszamlalo_server.txt
+# Formátum:
+# NÉV
+# DISCORD_GUILD_ID | DISCORD_CHANNEL_ID
+# NÉV
+# DISCORD_GUILD_ID | DISCORD_CHANNEL_ID
+# A felhasználók a visszaszamlalo.txt fájlban szerepelnek.
 # =====================================================================
 
 FORTNITE_WATCH_IDS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "visszaszamlalo.txt")
+FORTNITE_WATCH_SERVER_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "visszaszamlalo_server.txt")
 FORTNITE_WATCH_COOLDOWN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "visszaszamlalo_cooldowns.json")
 FORTNITE_WATCH_COOLDOWN_SECONDS = 60 * 60  # felhasználónként óránként legfeljebb egy panel
 
 
 def load_fortnite_watch_ids():
-    """ID-k beolvasása a 'ID | megjegyzés' formátumú TXT-ből."""
+    """Felhasználói ID-k beolvasása a régi 'ID | név' formátumú TXT-ből."""
     ids = set()
     try:
         with open(FORTNITE_WATCH_IDS_FILE, "r", encoding="utf-8-sig") as f:
@@ -1711,15 +1715,43 @@ def load_fortnite_watch_ids():
                 line = line.strip()
                 if not line or line.startswith("#"):
                     continue
-                # A megjegyzés a | után van, nem vesz részt az ellenőrzésben.
                 user_id_text = line.split("|", 1)[0].strip()
                 if user_id_text.isdigit():
                     ids.add(int(user_id_text))
     except FileNotFoundError:
-        print(f"⚠️ Nem található {FORTNITE_WATCH_IDS_FILE}. Hozd létre a bot mellett.")
+        print(f"⚠️ Nem található {FORTNITE_WATCH_IDS_FILE}")
     except Exception as e:
         print(f"⚠️ visszaszamlalo.txt olvasási hiba: {e}")
     return ids
+
+
+def load_fortnite_watch_server_channels():
+    """A név után következő sorból betölti a guild ID-t és channel ID-t."""
+    mapping = {}
+    try:
+        with open(FORTNITE_WATCH_SERVER_FILE, "r", encoding="utf-8-sig") as f:
+            lines = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
+        i = 0
+        while i < len(lines):
+            name = lines[i]
+            i += 1
+            if i >= len(lines):
+                print(f"⚠️ {FORTNITE_WATCH_SERVER_FILE}: nincs ID-sor ehhez: {name}")
+                break
+            id_line = lines[i]
+            i += 1
+            parts = [part.strip() for part in id_line.split("|", 1)]
+            if len(parts) != 2 or not parts[0].isdigit() or not parts[1].isdigit():
+                print(f"⚠️ {FORTNITE_WATCH_SERVER_FILE}: hibás szerver/csatorna ID '{name}': {id_line!r} – kihagyva")
+                continue
+            guild_id, channel_id = int(parts[0]), int(parts[1])
+            mapping[(guild_id, channel_id)] = name
+            print(f"🎯 Visszaszámláló hely beállítva: {name} | szerver={guild_id} | csatorna={channel_id}")
+    except FileNotFoundError:
+        print(f"❌ Nem található {FORTNITE_WATCH_SERVER_FILE}. Tedd a bot.py mellé!")
+    except Exception as e:
+        print(f"❌ visszaszamlalo_server.txt olvasási hiba: {e}")
+    return mapping
 
 
 def load_fortnite_watch_cooldowns():
@@ -1746,59 +1778,48 @@ _fortnite_watch_cooldowns = load_fortnite_watch_cooldowns()
 _fortnite_watch_lock = asyncio.Lock()
 
 
-@bot.event
-async def on_ready():
-    # Diagnosztika: ez megjelenik a Render futási Logs nézetében.
-    ids = load_fortnite_watch_ids()
-    print(f"✅ Discord bejelentkezve: {bot.user} (ID: {bot.user.id})")
-    print(f"🔎 Fortnite figyelő aktív | csatorna ID: {FORTNITE_SEASON_CHANNEL_ID}")
-    print(f"📄 ID-lista fájl: {FORTNITE_WATCH_IDS_FILE} | létezik: {os.path.isfile(FORTNITE_WATCH_IDS_FILE)} | beolvasott ID-k: {sorted(ids)}")
-    print(f"🕒 Mentett cooldown bejegyzések: {len(_fortnite_watch_cooldowns)}")
-
-
 @bot.listen("on_message")
 async def fortnite_season_auto_on_message(message: discord.Message):
-    """A TXT-ben szereplő felhasználók üzenetére nyilvános szezonpanelt küld."""
+    """A megadott szerveren/csatornában, engedélyezett felhasználó üzenetére panelt küld."""
     if message.author.bot or message.guild is None:
         return
 
-    # Csak a beállított csatornán naplózunk, hogy a Logs ne teljen meg.
-    if message.channel.id != FORTNITE_SEASON_CHANNEL_ID:
+    configured_locations = load_fortnite_watch_server_channels()
+    location_key = (message.guild.id, message.channel.id)
+    if location_key not in configured_locations:
         return
 
-    print(f"📩 Fortnite csatornaüzenet érzékelve | szerző ID: {message.author.id} | csatorna ID: {message.channel.id}")
     allowed_ids = load_fortnite_watch_ids()
     if not allowed_ids:
-        print(f"❌ Nincs beolvasható felhasználói ID a fájlban: {FORTNITE_WATCH_IDS_FILE}")
+        print("⚠️ A visszaszamlalo.txt nem tartalmaz érvényes felhasználói ID-t.")
         return
     if message.author.id not in allowed_ids:
-        print(f"ℹ️ Az üzenet szerzője nincs a visszaszamlalo.txt listában: {message.author.id}")
         return
 
+    display_name = configured_locations[location_key]
     now = datetime.now(timezone.utc).timestamp()
-    user_key = str(message.author.id)
+    user_key = f"{message.guild.id}:{message.channel.id}:{message.author.id}"
 
     async with _fortnite_watch_lock:
         last_sent = float(_fortnite_watch_cooldowns.get(user_key, 0) or 0)
-        remaining = FORTNITE_WATCH_COOLDOWN_SECONDS - (now - last_sent)
-        if remaining > 0:
-            print(f"⏳ Cooldown aktív {message.author.id} felhasználónál; hátralévő másodperc: {int(remaining)}")
+        if now - last_sent < FORTNITE_WATCH_COOLDOWN_SECONDS:
+            remaining = int(FORTNITE_WATCH_COOLDOWN_SECONDS - (now - last_sent))
+            print(f"⏳ Fortnite panel cooldown: {message.author} | {display_name} | még {remaining} mp")
             return
-        # Előre mentjük, hogy pár gyors egymás utáni üzenet se küldjön több panelt.
+        # Csak sikeres küldés után rögzítjük a cooldown-t.
         _fortnite_watch_cooldowns[user_key] = now
-        save_fortnite_watch_cooldowns(_fortnite_watch_cooldowns)
 
     try:
-        print("🌐 Fortnite.GG szezonadatok lekérése indul...")
+        print(f"🎮 Fortnite panel készítése: név={display_name}, felhasználó={message.author} ({message.author.id}), szerver={message.guild.id}, csatorna={message.channel.id}")
         data = await fetch_fortnite_season_data()
         await message.channel.send(embed=make_fortnite_season_embed(data), view=FortniteSeasonView())
-        print(f"🎮 Fortnite panel sikeresen elküldve {message.author} ({message.author.id}) üzenetére.")
+        save_fortnite_watch_cooldowns(_fortnite_watch_cooldowns)
+        print(f"✅ Fortnite panel elküldve: {display_name} | {message.author} ({message.author.id})")
     except Exception as e:
         async with _fortnite_watch_lock:
             _fortnite_watch_cooldowns.pop(user_key, None)
             save_fortnite_watch_cooldowns(_fortnite_watch_cooldowns)
-        print(f"❌ Automatikus Fortnite panel hiba ({type(e).__name__}): {e}")
-        print(traceback.format_exc())
+        print(f"❌ Automatikus Fortnite panel hiba ({display_name}): {type(e).__name__}: {e}")
 
 # ------------------------
 # Main indítás (Render kompatibilis)
